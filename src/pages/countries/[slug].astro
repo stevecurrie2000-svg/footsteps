@@ -1,0 +1,74 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import "../../styles/global.css";
+import { countries } from "../../data/countries";
+
+export function getStaticPaths() {
+  return countries.map((country) => ({
+    params: { slug: country.id },
+  }));
+}
+
+const { slug } = Astro.params;
+const country = countries.find((c) => c.id === slug)!;
+
+const totalPhotos = country.cities.reduce((acc, c) => acc + c.photos.length, 0);
+---
+
+<BaseLayout title={`${country.name} — Footsteps`}>
+  <!-- Country heading -->
+  <div class="mx-auto max-w-7xl px-6 pb-12 pt-16">
+    <a
+      href="/"
+      class="mb-8 inline-block text-xs uppercase tracking-widest text-[#fafafa]/40 transition-colors duration-200 hover:text-[#fafafa]/70"
+    >
+      &larr; All countries
+    </a>
+    <h1
+      class="text-5xl font-bold md:text-7xl"
+      style="font-family: 'Playfair Display', Georgia, serif;"
+    >
+      {country.name}
+    </h1>
+    <p class="mt-3 text-sm uppercase tracking-widest text-[#fafafa]/40">
+      {country.cities.length} cities &middot; {totalPhotos} photographs
+    </p>
+  </div>
+
+  <!-- City sections -->
+  {
+    country.cities.map((city) => (
+      <section class="mx-auto max-w-7xl px-6 pb-24">
+        <h2
+          class="mb-8 text-2xl font-bold md:text-3xl"
+          style="font-family: 'Playfair Display', Georgia, serif;"
+        >
+          {city.name}
+        </h2>
+
+        {/* CSS columns masonry grid — 1 col mobile, 2 tablet, 3 desktop */}
+        <div class="columns-1 gap-4 sm:columns-2 lg:columns-3">
+          {city.photos.map((photo) => (
+            <a
+              href={photo.src}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="group mb-4 block break-inside-avoid overflow-hidden"
+            >
+              <div class="overflow-hidden">
+                <img
+                  src={photo.src}
+                  alt={photo.caption}
+                  class="w-full transition-opacity duration-200 group-hover:opacity-80"
+                />
+              </div>
+              <p class="mt-1.5 text-xs uppercase tracking-widest text-[#fafafa]/40">
+                {city.name}
+              </p>
+            </a>
+          ))}
+        </div>
+      </section>
+    ))
+  }
+</BaseLayout>

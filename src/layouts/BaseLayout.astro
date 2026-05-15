@@ -1,0 +1,60 @@
+---
+interface Props {
+  title?: string;
+}
+const { title = "Footsteps" } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="min-h-screen flex flex-col">
+    <header class="sticky top-0 z-50 border-b border-white/10 bg-[#0a0a0a]/90 backdrop-blur-sm">
+      <nav class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+        <a
+          href="/"
+          class="text-xl font-bold tracking-wide text-[#fafafa]"
+          style="font-family: 'Playfair Display', Georgia, serif;"
+        >
+          Footsteps
+        </a>
+        <div class="flex gap-8">
+          <a
+            href="/"
+            class="text-sm text-[#fafafa]/60 transition-colors duration-200 hover:text-[#fafafa]"
+          >
+            Portfolio
+          </a>
+          <a
+            href="#"
+            class="text-sm text-[#fafafa]/60 transition-colors duration-200 hover:text-[#fafafa]"
+          >
+            Family
+          </a>
+        </div>
+      </nav>
+    </header>
+
+    <main class="flex-1">
+      <slot />
+    </main>
+
+    <footer class="border-t border-white/10 py-8 text-center">
+      <p class="text-xs text-[#fafafa]/30">
+        &copy; {new Date().getFullYear()} Footsteps
+      </p>
+    </footer>
+  </body>
+</html>

@@ -1,21 +1,46 @@
 ---
-import Layout from "../layouts/Layout.astro";
+import BaseLayout from "../layouts/BaseLayout.astro";
 import "../styles/global.css";
+import { countries } from "../data/countries";
 ---
 
-<Layout title="Footsteps">
-  <main class="min-h-screen flex flex-col items-center justify-center px-4">
+<BaseLayout title="Footsteps — Europe Photography">
+  <!-- Hero -->
+  <section class="px-6 py-24 text-center">
     <h1
-      class="text-5xl md:text-7xl font-bold text-center mb-6"
+      class="mb-4 text-6xl font-bold md:text-8xl"
       style="font-family: 'Playfair Display', Georgia, serif;"
     >
       Footsteps
     </h1>
-    <p
-      class="text-lg md:text-xl text-center opacity-60"
-      style="font-family: 'Inter', system-ui, sans-serif;"
-    >
-      A photographer's journey through Europe
-    </p>
-  </main>
-</Layout>
+  </section>
+
+  <!-- Country Grid -->
+  <section class="mx-auto max-w-7xl px-6 pb-24">
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {
+        countries.map((country) => (
+          <a
+            href={`/countries/${country.id}`}
+            class="group relative block aspect-square overflow-hidden"
+          >
+            <img
+              src={country.thumbnail}
+              alt={country.name}
+              class="h-full w-full object-cover transition-transform duration-300 ease-in-out group-hover:scale-105"
+            />
+            <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+            <div class="absolute bottom-0 left-0 p-6">
+              <h2
+                class="text-2xl font-bold text-white"
+                style="font-family: 'Playfair Display', Georgia, serif;"
+              >
+                {country.name}
+              </h2>
+            </div>
+          </a>
+        ))
+      }
+    </div>
+  </section>
+</BaseLayout>
