@@ -19,6 +19,14 @@
   // `wrangler deploy` and `wrangler versions upload` on the command line,
   // so it doesn't live here (it doesn't exist before the build runs).
 
+  // R2 object storage — the actual JPEG files live here
+  "r2_buckets": [
+    {
+      "binding": "PHOTOS",
+      "bucket_name": "footsteps-photos"
+    }
+  ],
+
   "d1_databases": [
     {
       "binding": "DB",
