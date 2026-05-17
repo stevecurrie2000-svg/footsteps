@@ -1,20 +1,46 @@
 ---
-export const prerender = true;
-
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import "../../styles/global.css";
-import { countries } from "../../data/countries";
 
-export function getStaticPaths() {
-  return countries.map((country) => ({
-    params: { slug: country.id },
-  }));
+const { env } = Astro.locals.runtime;
+const { slug } = Astro.params;
+
+// Fetch the country — 404 if the slug doesn't exist
+const country = await env.DB
+  .prepare("SELECT id, slug, name FROM countries WHERE slug = ?")
+  .bind(slug)
+  .first<{ id: number; slug: string; name: string }>();
+
+if (!country) {
+  return new Response(null, { status: 404, statusText: "Not Found" });
 }
 
-const { slug } = Astro.params;
-const country = countries.find((c) => c.id === slug)!;
+// Fetch cities for this country
+const { results: cities } = await env.DB
+  .prepare("SELECT id, slug, name FROM cities WHERE country_id = ? ORDER BY id")
+  .bind(country.id)
+  .all<{ id: number; slug: string; name: string }>();
 
-const totalPhotos = country.cities.reduce((acc, c) => acc + c.photos.length, 0);
+// Fetch public photos for this country, ordered for a consistent layout
+const { results: photos } = await env.DB
+  .prepare(`
+    SELECT id, city_id, r2_key_thumb, caption
+    FROM photos
+    WHERE country_id = ? AND is_public = 1
+    ORDER BY city_id, capture_date, created_at
+  `)
+  .bind(country.id)
+  .all<{ id: string; city_id: number; r2_key_thumb: string; caption: string | null }>();
+
+// Group photos by city_id so each city section can render its own grid
+const photosByCity = new Map<number, typeof photos>();
+for (const photo of photos) {
+  const list = photosByCity.get(photo.city_id) ?? [];
+  list.push(photo);
+  photosByCity.set(photo.city_id, list);
+}
+
+const totalPhotos = photos.length;
 ---
 
 <BaseLayout title={`${country.name} — Footsteps`}>
@@ -33,44 +59,41 @@ const totalPhotos = country.cities.reduce((acc, c) => acc + c.photos.length, 0);
       {country.name}
     </h1>
     <p class="mt-3 text-sm uppercase tracking-widest text-[#fafafa]/40">
-      {country.cities.length} cities &middot; {totalPhotos} photographs
+      {cities.length} {cities.length === 1 ? "city" : "cities"} &middot; {totalPhotos} {totalPhotos === 1 ? "photograph" : "photographs"}
     </p>
   </div>
 
   <!-- City sections -->
   {
-    country.cities.map((city) => (
-      <section class="mx-auto max-w-7xl px-6 pb-24">
-        <h2
-          class="mb-8 text-2xl font-bold md:text-3xl"
-          style="font-family: 'Playfair Display', Georgia, serif;"
-        >
-          {city.name}
-        </h2>
+    cities.map((city) => {
+      const cityPhotos = photosByCity.get(city.id) ?? [];
+      return (
+        <section class="mx-auto max-w-7xl px-6 pb-24">
+          <h2
+            class="mb-8 text-2xl font-bold md:text-3xl"
+            style="font-family: 'Playfair Display', Georgia, serif;"
+          >
+            {city.name}
+          </h2>
 
-        {/* CSS columns masonry grid — 1 col mobile, 2 tablet, 3 desktop */}
-        <div class="columns-1 gap-4 sm:columns-2 lg:columns-3">
-          {city.photos.map((photo) => (
-            <a
-              href={photo.src}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="group mb-4 block break-inside-avoid overflow-hidden"
-            >
-              <div class="overflow-hidden">
-                <img
-                  src={photo.src}
-                  alt={photo.caption}
-                  class="w-full transition-opacity duration-200 group-hover:opacity-80"
-                />
-              </div>
-              <p class="mt-1.5 text-xs uppercase tracking-widest text-[#fafafa]/40">
-                {city.name}
-              </p>
-            </a>
-          ))}
-        </div>
-      </section>
-    ))
+          {cityPhotos.length === 0 ? (
+            <p class="text-sm uppercase tracking-widest text-[#fafafa]/30">
+              No photographs yet.
+            </p>
+          ) : (
+            <div class="columns-1 gap-4 sm:columns-2 lg:columns-3">
+              {cityPhotos.map((photo) => (
+                <div class="group mb-4 block break-inside-avoid overflow-hidden">
+                  <div class="overflow-hidden bg-zinc-800 aspect-video" />
+                  <p class="mt-1.5 text-xs uppercase tracking-widest text-[#fafafa]/40">
+                    {photo.caption}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      );
+    })
   }
 </BaseLayout>

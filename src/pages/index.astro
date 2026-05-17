@@ -1,9 +1,12 @@
 ---
-export const prerender = true;
-
 import BaseLayout from "../layouts/BaseLayout.astro";
 import "../styles/global.css";
-import { countries } from "../data/countries";
+
+const { env } = Astro.locals.runtime;
+
+const { results: countries } = await env.DB
+  .prepare("SELECT id, slug, name FROM countries ORDER BY sort_order")
+  .all<{ id: number; slug: string; name: string }>();
 ---
 
 <BaseLayout title="Footsteps — Europe Photography">
@@ -23,14 +26,9 @@ import { countries } from "../data/countries";
       {
         countries.map((country) => (
           <a
-            href={`/countries/${country.id}`}
-            class="group relative block aspect-square overflow-hidden"
+            href={`/countries/${country.slug}`}
+            class="group relative block aspect-square overflow-hidden bg-zinc-800 transition-opacity duration-300 hover:opacity-90"
           >
-            <img
-              src={country.thumbnail}
-              alt={country.name}
-              class="h-full w-full object-cover transition-transform duration-300 ease-in-out group-hover:scale-105"
-            />
             <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
             <div class="absolute bottom-0 left-0 p-6">
               <h2
