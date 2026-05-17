@@ -84,7 +84,12 @@ const totalPhotos = photos.length;
             <div class="columns-1 gap-4 sm:columns-2 lg:columns-3">
               {cityPhotos.map((photo) => (
                 <div class="group mb-4 block break-inside-avoid overflow-hidden">
-                  <div class="overflow-hidden bg-zinc-800 aspect-video" />
+                  <img
+                    src={`/i/${photo.r2_key_thumb}`}
+                    alt={photo.caption ?? ""}
+                    loading="lazy"
+                    class="block w-full h-auto"
+                  />
                   <p class="mt-1.5 text-xs uppercase tracking-widest text-[#fafafa]/40">
                     {photo.caption}
                   </p>

@@ -10,8 +10,7 @@ export default defineConfig({
   output: 'server',
   adapter: cloudflare({
     imageService: 'cloudflare',
-    // Makes Cloudflare bindings (D1, R2, etc.) available during `astro dev`
-    platformProxy: { enabled: true }
+    remoteBindings: true,
   }),
   vite: {
     plugins: [tailwindcss()]
