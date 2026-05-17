@@ -1,8 +1,7 @@
 ---
+import { env } from "cloudflare:workers";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import "../styles/global.css";
-
-const { env } = Astro.locals.runtime;
 
 const { results: countries } = await env.DB
   .prepare("SELECT id, slug, name FROM countries ORDER BY sort_order")

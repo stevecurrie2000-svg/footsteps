@@ -1,8 +1,8 @@
 ---
+import { env } from "cloudflare:workers";
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import "../../styles/global.css";
 
-const { env } = Astro.locals.runtime;
 const { slug } = Astro.params;
 
 // Fetch the country — 404 if the slug doesn't exist
