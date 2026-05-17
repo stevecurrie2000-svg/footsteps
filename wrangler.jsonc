@@ -1,0 +1,30 @@
+{
+  "name": "footsteps",
+  "compatibility_date": "2025-01-01",
+  // nodejs_compat lets the Worker use Node-style APIs (required by the adapter)
+  "compatibility_flags": ["nodejs_compat"],
+  // The adapter pre-bundles everything — tell wrangler not to re-bundle
+  "no_bundle": true,
+  "rules": [
+    { "type": "ESModule", "globs": ["**/*.js", "**/*.mjs"] }
+  ],
+
+  // Static assets (HTML, CSS, images) — adapter v13 puts these in dist/client/
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS"
+  },
+
+  // The Worker entry point (dist/server/entry.mjs) is passed directly to
+  // `wrangler deploy` and `wrangler versions upload` on the command line,
+  // so it doesn't live here (it doesn't exist before the build runs).
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "footsteps-db",
+      "database_id": "88724f39-402b-45a0-b75b-e9309e4686e3",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

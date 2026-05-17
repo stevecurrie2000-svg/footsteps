@@ -1,5 +1,8 @@
 # build output
 dist/
+
+# Wrangler local state (D1 SQLite, KV, etc.)
+.wrangler/
 # generated types
 .astro/
 
