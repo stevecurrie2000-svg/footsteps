@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: May 2026, post first-photo-end-to-end session
+**Last updated**: May 2026, post Phase 3 deploy unblock + close-out
 
 | Item | State |
 |---|---|
@@ -97,6 +97,9 @@ in the post-restart session, see lessons below).
   `56aad643-0307-46cc-86e4-636753b158bb`): phone photo of London,
   public, all four R2 variants verified, row written to D1, rendering
   on the live site at `https://footsteps.gallery/countries/united-kingdom`.
+- **SESSION KV namespace binding** hardcoded into `wrangler.jsonc`
+  (id `2f4c26f795e2448d9bb59e4ef074913b`) to prevent auto-provisioning
+  collisions on subsequent deploys.
 
 ---
 
@@ -248,9 +251,9 @@ closing out Phase 3's exit criterion.
 - **Caching: 1 year immutable.** Safe because R2 keys contain UUIDs
   — content never changes for a given key.
 
-**Phase 3 exit criterion**: <!-- FILL IN AFTER VERIFYING ON LIVE SITE -->
-Photo renders at `https://footsteps.gallery/countries/united-kingdom`
-under the London section. _[Confirm: ✅ confirmed / ⚠ partial / ❌ not yet]_
+**Phase 3 exit criterion**: ✅ Confirmed in the next session. London
+test photo renders on both `https://footsteps.gallery/countries/united-kingdom`
+and the workers.dev equivalent.
 
 **Left unfinished**:
 - **Second photo upload test (Australian city)** — deferred. Would
@@ -293,6 +296,96 @@ under the London section. _[Confirm: ✅ confirmed / ⚠ partial / ❌ not yet]_
   never exercised. When OAuth session expired, everything broke at
   once. Lesson: structurally validate `.env` values, don't just
   check that the variable exists.
+
+---
+
+### Session: Deploy Unblock + Phase 3 Live (May 2026)
+
+**Context**: Returned to push the last Phase 3 commits live. Wrangler
+was reporting "logged in with an API Token" and refusing both
+`wrangler logout` and `wrangler login`. Build log from the previous
+session noted two untested suspects: project `.env` being read by a
+dotenv loader, and Wrangler's credential cache.
+
+**What was diagnosed**:
+- Wrangler's credential cache (`%APPDATA%\xdg.config\.wrangler\
+  config\default.toml`) contained a valid OAuth token. Clean.
+- No stray `CLOUDFLARE_API_TOKEN` env var in any shell scope.
+- The real culprit was twofold:
+  1. The Astro build copies `.env` into `dist/server/.dev.vars`,
+     which Wrangler reads alongside `--config dist/server/wrangler.json`
+     at deploy time. `CLOUDFLARE_API_TOKEN` (the upload-script-only
+     token) was overriding the OAuth session.
+  2. Wrangler also reads `.env` directly from the current working
+     directory. Even after cleaning `.dev.vars`, running `wrangler`
+     from the project root re-loaded the same token.
+- Fix: run deploy from the parent directory
+  (`cd /c/users/steve/projects`), pointing at the config via relative
+  path. That sidesteps both the `.dev.vars` issue and the cwd `.env`
+  pickup. Wrangler falls back to the OAuth cache, which works.
+- Second blocker on first clean deploy attempt: error 10014, KV
+  namespace `footsteps-session` already existed from a prior
+  half-completed deploy. Astro's Cloudflare adapter tries to
+  auto-provision the SESSION KV binding on every deploy. Fix: hardcode
+  the existing namespace ID into `wrangler.jsonc` so Wrangler binds to
+  it instead of trying to create a new one.
+
+**What was built/changed**:
+- `wrangler.jsonc`: Added `kv_namespaces` array with explicit SESSION
+  binding (id `2f4c26f795e2448d9bb59e4ef074913b`). Committed as
+  `c9a9090`.
+- First successful deploy from new code: Worker `footsteps` version
+  `3abce671`. All four bindings live (SESSION, DB, PHOTOS, ASSETS).
+
+**Verified**:
+- ✅ London test photo renders on `https://footsteps.gallery/countries/united-kingdom`
+- ✅ Same renders on `https://footsteps.stevecurrie2000.workers.dev/countries/united-kingdom`
+
+**Phase 3 status**: ✅ Complete.
+
+**Left unfinished** (carried to next session):
+- GitHub Actions auto-deploy (Option 2) — still pending. Now the
+  single biggest QoL win available; with it, the deploy-environment
+  fragility of this session never matters again.
+- `footsteps build token` cleanup — still over-scoped, still pending
+  deletion. Safe to remove once GitHub Actions has its own scoped
+  deploy credential.
+- `infrastructure.md` — still not created.
+
+**Issues encountered (worth recording)**:
+
+- **Astro Cloudflare adapter copies `.env` into `dist/server/.dev.vars`.**
+  Any auth tokens in `.env` will be picked up by Wrangler at deploy
+  time, even if they're scoped for unrelated purposes (e.g. an
+  upload-script-only token). The two are conceptually distinct — `.env`
+  for build-time/local Node scripts vs. `.dev.vars` for Worker runtime
+  vars — but the adapter blurs the line. Mitigations: (a) deploy from
+  outside the project directory; (b) strip auth vars from `.dev.vars`
+  after build, before deploy; (c) better long-term: move
+  upload-script credentials out of `.env` entirely and into a separate
+  file the build doesn't touch.
+
+- **Wrangler reads `.env` from the current working directory.** This
+  is in addition to the `.dev.vars` pickup. `CLOUDFLARE_API_TOKEN` set
+  in a project `.env` will override the OAuth session whenever
+  Wrangler is run from that directory, even without the var being
+  exported to the shell. `wrangler whoami` is the cheap check: it
+  reports the auth method ("OAuth Token" vs "User API Token") it's
+  currently using, which immediately tells you whether `.env`
+  override is active.
+
+- **`wrangler logout` cannot remove env-var-based auth.** Logout only
+  affects the OAuth cache. If the auth is coming from an env var (or
+  a `.env` file), logout reports nothing to do and login refuses to
+  overwrite. The trap is the error message, which sounds like a
+  permanent stuck state.
+
+- **Astro adapter auto-provisions SESSION KV on every deploy.** If
+  Wrangler's first deploy attempt creates the namespace but the
+  overall deploy fails (auth error, timeout, anything), the next
+  deploy hits error 10014 ("namespace already exists") and can't
+  recover until the namespace is explicitly bound in `wrangler.jsonc`.
+  Hardcode the namespace ID on first successful create.
 
 ---
 
@@ -341,6 +434,21 @@ under the London section. _[Confirm: ✅ confirmed / ⚠ partial / ❌ not yet]_
 - **Worker proxy for R2 images** uses long cache headers safely
   because R2 keys are UUIDs (content per key never changes):
   `Cache-Control: public, max-age=31536000, immutable`.
+- **The Astro Cloudflare adapter copies `.env` into
+  `dist/server/.dev.vars`** during build, and Wrangler reads
+  `.dev.vars` at deploy time. Keep build-time-only credentials (like
+  REST API tokens for upload scripts) separate from `.env`, or strip
+  them from `.dev.vars` post-build.
+- **Wrangler reads `.env` from the current working directory** in
+  addition to shell env vars. The cheapest way to check which auth
+  method is active: `wrangler whoami`. To force the OAuth cache,
+  deploy from a directory without `.env`.
+- **Astro's Cloudflare adapter auto-provisions KV bindings** on first
+  deploy (e.g. SESSION for sessions storage). Once created, hardcode
+  the namespace ID into `wrangler.jsonc` — don't rely on
+  auto-provisioning on subsequent deploys, because if any deploy
+  fails after the namespace is created, the next deploy hits a name
+  conflict.
 
 **Security / credentials**
 
