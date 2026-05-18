@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: May 2026, post Phase 3 deploy unblock + close-out
+**Last updated**: 18 May 2026, post GitHub Actions auto-deploy
 
 | Item | State |
 |---|---|
@@ -20,7 +20,7 @@ boundaries.
 | Phase 4 — Admin upload pipeline | ⏳ Not started |
 | Phase 5 — Family section + Access | ⏳ Not started |
 | Phase 6 — Polish | ⏳ Not started |
-| Next immediate task | Set up GitHub Actions auto-deploy (Option 2) |
+| Next immediate task | Phase 4 Slice 1 — admin upload route with Cloudflare Access |
 
 ---
 
@@ -386,6 +386,95 @@ dotenv loader, and Wrangler's credential cache.
   deploy hits error 10014 ("namespace already exists") and can't
   recover until the namespace is explicitly bound in `wrangler.jsonc`.
   Hardcode the namespace ID on first successful create.
+
+---
+
+### Session: GitHub Actions Auto-Deploy (May 2026)
+
+**Context**: Phase 3 closed out with auto-deploy still manual via
+`wrangler deploy` and the `.env` / OAuth fragility from the previous
+session still live. Decided to knock out auto-deploy before starting Phase
+4 so subsequent feature work isn't blocked by deploy-environment churn.
+
+**What was built/changed**:
+- New scoped Cloudflare API token `footsteps-github-actions-deploy`
+  created. Permissions: Workers Scripts:Edit, Workers KV Storage:Edit,
+  D1:Edit, User Details:Read. Scoped to single account, 1-year TTL.
+- GitHub repository secrets added: `CLOUDFLARE_API_TOKEN` and
+  `CLOUDFLARE_ACCOUNT_ID`.
+- `.github/workflows/deploy.yml` created — workflow triggers on push to
+  `main` (and manual dispatch). Five steps: checkout, setup Node 22, npm
+  ci, npm run build, wrangler deploy via `cloudflare/wrangler-action@v3`.
+  Deploy command matches the working manual command:
+  `deploy --config dist/server/wrangler.json`.
+- First run failed on Build site step: Astro v6 requires Node >=22.12.0
+  but workflow was set to Node 20. Fix: bump `node-version` to `'22'`.
+- Second run succeeded end-to-end in 38 seconds. Worker version replaced
+  in production via GitHub Actions, not laptop.
+- `footsteps build token` (over-scoped legacy token with 24 permissions,
+  no expiry) deleted from Cloudflare.
+
+**Verified**:
+- ✅ `https://footsteps.gallery` homepage and country grid render
+  correctly post-deploy
+- ✅ `https://footsteps.gallery/countries/united-kingdom` still shows
+  the London test photo
+- ✅ `https://footsteps.stevecurrie2000.workers.dev/countries/united-kingdom`
+  same
+- ✅ No regression vs prior manual deploy
+
+**Decisions made**:
+- Deploy on every push to `main` (no manual approval gate, no tag-based
+  releases). Personal-project velocity wins; reverting a bad push is one
+  commit away.
+- Workflow uses `cloudflare/wrangler-action@v3`, the
+  Cloudflare-maintained action. Auth via API token env var, OAuth cache
+  on laptop is independent and untouched (manual `wrangler deploy` from
+  the laptop still works for emergencies).
+- Token scoped tightly per task. No more "build token" with sprawl.
+
+**Left unfinished** (carried to next session):
+- **Phase 4 Slice 1**: server-side upload route + Cloudflare Access in
+  front of the admin path. Next session's primary work.
+- **Node 20 deprecation warning**: `actions/checkout@v4` and
+  `actions/setup-node@v4` themselves run on Node 20 internals. GitHub
+  will force Node 24 on action wrappers by June 2026. Bump to `@v5`
+  versions when they're stable. Non-urgent.
+- **`footsteps continue.txt`** untracked file in working tree — needs
+  either gitignoring (if a Claude Code session artefact) or deleting
+  (if a leftover). Confirm purpose then handle.
+- **`infrastructure.md` doc**: still not created. Now have three tokens
+  to document (`footsteps-upload-script`, `footsteps-github-actions-deploy`,
+  plus historical record of the deleted `footsteps build token`).
+
+**Issues encountered (worth recording)**:
+
+- **Astro v6 minimum Node version is 22.12.0.** Default GitHub Actions
+  workflow templates suggest Node 20, which is one major version below
+  Astro's floor. Build step fails fast with a clear error message, so
+  not a debugging nightmare — but a gotcha worth knowing for any future
+  CI setup.
+
+- **Node 20 deprecation on action wrappers ≠ project Node version.**
+  GitHub's deprecation notice ("Node.js 20 actions are deprecated") is
+  about the runtime inside the action wrappers themselves
+  (`actions/checkout`, `actions/setup-node`), not about the Node version
+  your project's build steps run with. Two different layers that happen
+  to share a warning surface. Distinguishing them saved confusion.
+
+**Lessons learned this session** (to fold into the Lessons section):
+
+- **Astro requires Node 22.12+ for v6.** Pin CI to Node 22 minimum. If
+  the project upgrades to a future Astro version, re-check the engine
+  requirement.
+- **GitHub Actions auth via `cloudflare/wrangler-action@v3` is much
+  cleaner than DIY.** It handles env-var setup, doesn't need a separate
+  `wrangler login` step, doesn't fall back to interactive auth. Worth
+  the third-party dependency.
+- **Scope every API token narrowly, set TTLs, name them per purpose.**
+  Continuing the discipline from Phase 3. Three tokens now exist
+  (upload-script, github-actions, [deleted: footsteps build token]),
+  all narrowly scoped, all dated.
 
 ---
 
