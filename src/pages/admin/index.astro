@@ -1,0 +1,409 @@
+---
+export const prerender = false;
+
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { requireAdmin } from "../../lib/admin-auth";
+
+const auth = requireAdmin(Astro.request);
+if (auth instanceof Response) return auth;
+const { email } = auth;
+---
+
+<BaseLayout title="Admin — Upload">
+  <div class="max-w-2xl mx-auto px-6 py-10 space-y-6">
+
+    <div>
+      <h1
+        class="text-3xl font-bold text-[#fafafa]"
+        style="font-family: 'Playfair Display', Georgia, serif;"
+      >
+        Admin — Upload
+      </h1>
+      <p class="mt-1 text-sm text-[#fafafa]/50">Signed in as {email}</p>
+    </div>
+
+    <form id="upload-form" class="space-y-6">
+
+      <!-- Drop zone -->
+      <div>
+        <div
+          id="drop-zone"
+          class="border-2 border-dashed border-[#fafafa]/30 rounded-lg py-16 flex items-center justify-center cursor-pointer hover:border-[#fafafa] transition-colors duration-200"
+        >
+          <p class="text-[#fafafa]/40 text-center select-none text-sm">
+            Drop photos here, or click to choose files
+          </p>
+          <input
+            type="file"
+            id="file-input"
+            multiple
+            accept="image/jpeg,image/png"
+            class="hidden"
+          />
+        </div>
+
+        <!-- Preview grid — shown only when files selected -->
+        <div id="preview-grid" class="hidden flex flex-wrap gap-3 mt-4"></div>
+      </div>
+
+      <!-- Country dropdown -->
+      <div>
+        <label for="country-select" class="block text-sm text-[#fafafa]/50 mb-1">Country</label>
+        <select
+          id="country-select"
+          required
+          class="w-full bg-zinc-900 border border-white/20 rounded px-3 py-2 text-[#fafafa] focus:outline-none focus:border-[#fafafa] transition-colors"
+        >
+          <option value="" disabled selected>Choose a country…</option>
+        </select>
+      </div>
+
+      <!-- City dropdown -->
+      <div>
+        <label for="city-select" class="block text-sm text-[#fafafa]/50 mb-1">City</label>
+        <select
+          id="city-select"
+          required
+          disabled
+          class="w-full bg-zinc-900 border border-white/20 rounded px-3 py-2 text-[#fafafa] disabled:opacity-40 focus:outline-none focus:border-[#fafafa] transition-colors"
+        >
+          <option value="" disabled selected>Choose a country first</option>
+        </select>
+      </div>
+
+      <!-- Audience toggle -->
+      <div>
+        <p class="text-sm text-[#fafafa]/50 mb-2">Audience</p>
+        <div class="inline-flex rounded-full border border-white/20 overflow-hidden">
+          <button
+            type="button"
+            id="toggle-family"
+            class="px-5 py-2 text-sm font-medium bg-[#fafafa] text-[#0a0a0a]"
+          >Family</button>
+          <button
+            type="button"
+            id="toggle-public"
+            class="px-5 py-2 text-sm font-medium text-[#fafafa]/40"
+          >Public</button>
+        </div>
+        <input type="hidden" id="is-public" name="is_public" value="0" />
+      </div>
+
+      <!-- Caption -->
+      <div>
+        <label for="caption" class="block text-sm text-[#fafafa]/50 mb-1">Caption</label>
+        <input
+          type="text"
+          id="caption"
+          maxlength="200"
+          placeholder="Caption (optional)"
+          class="w-full bg-zinc-900 border border-white/20 rounded px-3 py-2 text-[#fafafa] placeholder-[#fafafa]/20 focus:outline-none focus:border-[#fafafa] transition-colors"
+        />
+      </div>
+
+      <!-- Upload button -->
+      <button
+        type="submit"
+        id="upload-button"
+        disabled
+        class="w-full py-3 rounded bg-[#fafafa] text-[#0a0a0a] font-medium disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
+      >
+        Upload
+      </button>
+
+      <!-- Status area -->
+      <div id="status" class="space-y-1 text-sm"></div>
+
+    </form>
+  </div>
+</BaseLayout>
+
+<script>
+  // ── State ─────────────────────────────────────────────────────────────────
+  let files: File[] = [];
+  let isPublic = false;
+
+  // ── Element refs ──────────────────────────────────────────────────────────
+  const dropZone      = document.getElementById("drop-zone")      as HTMLDivElement;
+  const fileInput     = document.getElementById("file-input")     as HTMLInputElement;
+  const previewGrid   = document.getElementById("preview-grid")   as HTMLDivElement;
+  const countrySelect = document.getElementById("country-select") as HTMLSelectElement;
+  const citySelect    = document.getElementById("city-select")    as HTMLSelectElement;
+  const toggleFamily  = document.getElementById("toggle-family")  as HTMLButtonElement;
+  const togglePublic  = document.getElementById("toggle-public")  as HTMLButtonElement;
+  const isPublicInput = document.getElementById("is-public")      as HTMLInputElement;
+  const captionInput  = document.getElementById("caption")        as HTMLInputElement;
+  const uploadButton  = document.getElementById("upload-button")  as HTMLButtonElement;
+  const statusArea    = document.getElementById("status")         as HTMLDivElement;
+  const uploadForm    = document.getElementById("upload-form")    as HTMLFormElement;
+
+  // ── Country load ──────────────────────────────────────────────────────────
+  async function loadCountries() {
+    const res = await fetch("/api/admin/countries");
+    if (!res.ok) return;
+    const data = await res.json() as { countries: { slug: string; name: string }[] };
+    for (const c of data.countries) {
+      const opt = document.createElement("option");
+      opt.value = c.slug;
+      opt.textContent = c.name;
+      countrySelect.appendChild(opt);
+    }
+  }
+  loadCountries();
+
+  // ── Button state ──────────────────────────────────────────────────────────
+  function updateButtonState() {
+    const ready =
+      files.length > 0 &&
+      countrySelect.value !== "" &&
+      citySelect.value !== "";
+    uploadButton.disabled = !ready;
+    uploadButton.textContent =
+      files.length === 0
+        ? "Upload"
+        : `Upload ${files.length} photo${files.length === 1 ? "" : "s"}`;
+  }
+
+  // ── File handling ─────────────────────────────────────────────────────────
+  function addFiles(filesList: FileList | null) {
+    if (!filesList) return;
+    for (const file of filesList) {
+      if (!["image/jpeg", "image/png"].includes(file.type)) continue;
+      files.push(file);
+      renderPreview(file);
+    }
+    previewGrid.classList.toggle("hidden", files.length === 0);
+    updateButtonState();
+  }
+
+  function renderPreview(file: File) {
+    const url = URL.createObjectURL(file);
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "relative w-28 h-28 rounded overflow-hidden flex-shrink-0";
+    wrapper.dataset.filename = file.name;
+
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = "";
+    img.title = file.name;
+    img.className = "w-full h-full object-cover";
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.textContent = "×";
+    removeBtn.dataset.filename = file.name;
+    removeBtn.className =
+      "absolute top-1 right-1 w-5 h-5 flex items-center justify-center " +
+      "rounded-full bg-black/70 text-white text-xs leading-none";
+
+    wrapper.appendChild(img);
+    wrapper.appendChild(removeBtn);
+    previewGrid.appendChild(wrapper);
+  }
+
+  // Remove via event delegation
+  previewGrid.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>("button[data-filename]");
+    if (!btn) return;
+    const filename = btn.dataset.filename!;
+    files = files.filter((f) => f.name !== filename);
+    const wrapper = previewGrid.querySelector<HTMLElement>(
+      `div[data-filename="${CSS.escape(filename)}"]`
+    );
+    if (wrapper) {
+      const img = wrapper.querySelector("img");
+      if (img) URL.revokeObjectURL(img.src);
+      wrapper.remove();
+    }
+    previewGrid.classList.toggle("hidden", files.length === 0);
+    updateButtonState();
+  });
+
+  // ── Drop zone ─────────────────────────────────────────────────────────────
+  dropZone.addEventListener("click", () => fileInput.click());
+
+  dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("border-[#fafafa]");
+    dropZone.classList.remove("border-[#fafafa]/30");
+  });
+
+  dropZone.addEventListener("dragleave", () => {
+    dropZone.classList.remove("border-[#fafafa]");
+    dropZone.classList.add("border-[#fafafa]/30");
+  });
+
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("border-[#fafafa]");
+    dropZone.classList.add("border-[#fafafa]/30");
+    addFiles(e.dataTransfer?.files ?? null);
+  });
+
+  fileInput.addEventListener("change", function () {
+    addFiles(this.files);
+    this.value = "";
+  });
+
+  // ── Country / city selects ────────────────────────────────────────────────
+  countrySelect.addEventListener("change", async () => {
+    // Reset city
+    citySelect.innerHTML = "";
+    citySelect.disabled = true;
+    const loadingOpt = document.createElement("option");
+    loadingOpt.value = "";
+    loadingOpt.disabled = true;
+    loadingOpt.selected = true;
+    loadingOpt.textContent = "Loading…";
+    citySelect.appendChild(loadingOpt);
+    updateButtonState();
+
+    if (!countrySelect.value) return;
+
+    const res = await fetch(
+      `/api/admin/cities?country=${encodeURIComponent(countrySelect.value)}`
+    );
+
+    citySelect.innerHTML = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    placeholder.textContent = "Choose a city…";
+    citySelect.appendChild(placeholder);
+
+    if (res.ok) {
+      const data = await res.json() as { cities: { slug: string; name: string }[] };
+      for (const c of data.cities) {
+        const opt = document.createElement("option");
+        opt.value = c.slug;
+        opt.textContent = c.name;
+        citySelect.appendChild(opt);
+      }
+      citySelect.disabled = false;
+    }
+    updateButtonState();
+  });
+
+  citySelect.addEventListener("change", updateButtonState);
+
+  // ── Audience toggle ───────────────────────────────────────────────────────
+  function setToggle(pub: boolean) {
+    isPublic = pub;
+    isPublicInput.value = pub ? "1" : "0";
+    toggleFamily.className =
+      `px-5 py-2 text-sm font-medium ${!pub ? "bg-[#fafafa] text-[#0a0a0a]" : "text-[#fafafa]/40"}`;
+    togglePublic.className =
+      `px-5 py-2 text-sm font-medium ${pub ? "bg-[#fafafa] text-[#0a0a0a]" : "text-[#fafafa]/40"}`;
+  }
+  toggleFamily.addEventListener("click", () => setToggle(false));
+  togglePublic.addEventListener("click", () => setToggle(true));
+
+  // ── Image resizing ────────────────────────────────────────────────────────
+  function resizeToBlob(
+    img: HTMLImageElement,
+    maxLongSide: number,
+    quality: number
+  ): Promise<Blob> {
+    return new Promise((resolve) => {
+      const ratio = Math.min(
+        1,
+        maxLongSide / Math.max(img.naturalWidth, img.naturalHeight)
+      );
+      const w = Math.round(img.naturalWidth * ratio);
+      const h = Math.round(img.naturalHeight * ratio);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d")!;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob((blob) => resolve(blob!), "image/jpeg", quality);
+    });
+  }
+
+  async function resizeImage(
+    file: File
+  ): Promise<{ thumb: Blob; medium: Blob; full: Blob; original: Blob }> {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = reject;
+      img.src = url;
+    });
+    const [thumb, medium, full, original] = await Promise.all([
+      resizeToBlob(img, 400, 0.8),
+      resizeToBlob(img, 1200, 0.85),
+      resizeToBlob(img, 2400, 0.9),
+      resizeToBlob(img, 4000, 0.95),
+    ]);
+    URL.revokeObjectURL(url);
+    return { thumb, medium, full, original };
+  }
+
+  // ── Form submit ───────────────────────────────────────────────────────────
+  uploadForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const batch = [...files];
+    const country     = countrySelect.value;
+    const city        = citySelect.value;
+    const isPublicVal = isPublicInput.value;
+    const caption     = captionInput.value.trim();
+
+    uploadButton.disabled = true;
+
+    for (let i = 0; i < batch.length; i++) {
+      const file = batch[i];
+      uploadButton.textContent = `Uploading ${i + 1} of ${batch.length}…`;
+
+      try {
+        const { thumb, medium, full, original } = await resizeImage(file);
+
+        const fd = new FormData();
+        fd.append("country",    country);
+        fd.append("city",       city);
+        fd.append("is_public",  isPublicVal);
+        fd.append("caption",    caption);
+        fd.append("thumb",      thumb,    `${file.name}-thumb.jpg`);
+        fd.append("medium",     medium,   `${file.name}-medium.jpg`);
+        fd.append("full",       full,     `${file.name}-full.jpg`);
+        fd.append("original",   original, `${file.name}-original.jpg`);
+
+        const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
+
+        const line = document.createElement("p");
+        if (res.status === 201) {
+          line.className = "text-green-400";
+          line.textContent = `✓ ${file.name} uploaded`;
+        } else {
+          let reason = res.statusText;
+          try {
+            const body = await res.json() as { error?: string };
+            if (body.error) reason = body.error;
+          } catch { /* ignore parse errors */ }
+          line.className = "text-red-400";
+          line.textContent = `✗ ${file.name} failed: ${reason}`;
+        }
+        statusArea.appendChild(line);
+      } catch (err) {
+        const line = document.createElement("p");
+        line.className = "text-red-400";
+        line.textContent = `✗ ${file.name} failed: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`;
+        statusArea.appendChild(line);
+      }
+    }
+
+    uploadButton.textContent = "Done";
+    files = [];
+    previewGrid.innerHTML = "";
+    previewGrid.classList.add("hidden");
+    fileInput.value = "";
+    captionInput.value = "";
+    // Country and city left as-is for follow-on uploads
+  });
+</script>
