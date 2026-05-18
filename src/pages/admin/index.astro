@@ -14,12 +14,11 @@ const { email } = auth;
 
     <div>
       <h1
-        class="text-3xl font-bold text-[#fafafa]"
-        style="font-family: 'Playfair Display', Georgia, serif;"
+        class="text-3xl font-bold text-foreground font-heading"
       >
         Admin — Upload
       </h1>
-      <p class="mt-1 text-sm text-[#fafafa]/50">Signed in as {email}</p>
+      <p class="mt-1 text-sm text-foreground/50">Signed in as {email}</p>
     </div>
 
     <form id="upload-form" class="space-y-6">
@@ -28,9 +27,9 @@ const { email } = auth;
       <div>
         <div
           id="drop-zone"
-          class="border-2 border-dashed border-[#fafafa]/30 rounded-lg py-16 flex items-center justify-center cursor-pointer hover:border-[#fafafa] transition-colors duration-200"
+          class="border-2 border-dashed border-foreground/30 rounded-lg py-16 flex items-center justify-center cursor-pointer hover:border-foreground transition-colors duration-200"
         >
-          <p class="text-[#fafafa]/40 text-center select-none text-sm">
+          <p class="text-foreground/40 text-center select-none text-sm">
             Drop photos here, or click to choose files
           </p>
           <input
@@ -48,11 +47,11 @@ const { email } = auth;
 
       <!-- Country dropdown -->
       <div>
-        <label for="country-select" class="block text-sm text-[#fafafa]/50 mb-1">Country</label>
+        <label for="country-select" class="block text-sm text-foreground/50 mb-1">Country</label>
         <select
           id="country-select"
           required
-          class="w-full bg-zinc-900 border border-white/20 rounded px-3 py-2 text-[#fafafa] focus:outline-none focus:border-[#fafafa] transition-colors"
+          class="w-full bg-zinc-900 border border-white/20 rounded px-3 py-2 text-foreground focus:outline-none focus:border-foreground transition-colors"
         >
           <option value="" disabled selected>Choose a country…</option>
         </select>
@@ -60,12 +59,12 @@ const { email } = auth;
 
       <!-- City dropdown -->
       <div>
-        <label for="city-select" class="block text-sm text-[#fafafa]/50 mb-1">City</label>
+        <label for="city-select" class="block text-sm text-foreground/50 mb-1">City</label>
         <select
           id="city-select"
           required
           disabled
-          class="w-full bg-zinc-900 border border-white/20 rounded px-3 py-2 text-[#fafafa] disabled:opacity-40 focus:outline-none focus:border-[#fafafa] transition-colors"
+          class="w-full bg-zinc-900 border border-white/20 rounded px-3 py-2 text-foreground disabled:opacity-40 focus:outline-none focus:border-foreground transition-colors"
         >
           <option value="" disabled selected>Choose a country first</option>
         </select>
@@ -73,17 +72,17 @@ const { email } = auth;
 
       <!-- Audience toggle -->
       <div>
-        <p class="text-sm text-[#fafafa]/50 mb-2">Audience</p>
+        <p class="text-sm text-foreground/50 mb-2">Audience</p>
         <div class="inline-flex rounded-full border border-white/20 overflow-hidden">
           <button
             type="button"
             id="toggle-family"
-            class="px-5 py-2 text-sm font-medium bg-[#fafafa] text-[#0a0a0a]"
+            class="px-5 py-2 text-sm font-medium bg-foreground text-background"
           >Family</button>
           <button
             type="button"
             id="toggle-public"
-            class="px-5 py-2 text-sm font-medium text-[#fafafa]/40"
+            class="px-5 py-2 text-sm font-medium text-foreground/40"
           >Public</button>
         </div>
         <input type="hidden" id="is-public" name="is_public" value="0" />
@@ -91,13 +90,13 @@ const { email } = auth;
 
       <!-- Caption -->
       <div>
-        <label for="caption" class="block text-sm text-[#fafafa]/50 mb-1">Caption</label>
+        <label for="caption" class="block text-sm text-foreground/50 mb-1">Caption</label>
         <input
           type="text"
           id="caption"
           maxlength="200"
           placeholder="Caption (optional)"
-          class="w-full bg-zinc-900 border border-white/20 rounded px-3 py-2 text-[#fafafa] placeholder-[#fafafa]/20 focus:outline-none focus:border-[#fafafa] transition-colors"
+          class="w-full bg-zinc-900 border border-white/20 rounded px-3 py-2 text-foreground placeholder-foreground/20 focus:outline-none focus:border-foreground transition-colors"
         />
       </div>
 
@@ -106,7 +105,7 @@ const { email } = auth;
         type="submit"
         id="upload-button"
         disabled
-        class="w-full py-3 rounded bg-[#fafafa] text-[#0a0a0a] font-medium disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
+        class="w-full py-3 rounded bg-foreground text-background font-medium disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
       >
         Upload
       </button>
@@ -225,25 +224,24 @@ const { email } = auth;
 
   dropZone.addEventListener("dragover", (e) => {
     e.preventDefault();
-    dropZone.classList.add("border-[#fafafa]");
-    dropZone.classList.remove("border-[#fafafa]/30");
+    dropZone.classList.add("border-foreground");
+    dropZone.classList.remove("border-foreground/30");
   });
 
   dropZone.addEventListener("dragleave", () => {
-    dropZone.classList.remove("border-[#fafafa]");
-    dropZone.classList.add("border-[#fafafa]/30");
+    dropZone.classList.remove("border-foreground");
+    dropZone.classList.add("border-foreground/30");
   });
 
   dropZone.addEventListener("drop", (e) => {
     e.preventDefault();
-    dropZone.classList.remove("border-[#fafafa]");
-    dropZone.classList.add("border-[#fafafa]/30");
+    dropZone.classList.remove("border-foreground");
+    dropZone.classList.add("border-foreground/30");
     addFiles(e.dataTransfer?.files ?? null);
   });
 
   fileInput.addEventListener("change", function () {
     addFiles(this.files);
-    this.value = "";
   });
 
   // ── Country / city selects ────────────────────────────────────────────────
@@ -293,9 +291,9 @@ const { email } = auth;
     isPublic = pub;
     isPublicInput.value = pub ? "1" : "0";
     toggleFamily.className =
-      `px-5 py-2 text-sm font-medium ${!pub ? "bg-[#fafafa] text-[#0a0a0a]" : "text-[#fafafa]/40"}`;
+      `px-5 py-2 text-sm font-medium ${!pub ? "bg-foreground text-background" : "text-foreground/40"}`;
     togglePublic.className =
-      `px-5 py-2 text-sm font-medium ${pub ? "bg-[#fafafa] text-[#0a0a0a]" : "text-[#fafafa]/40"}`;
+      `px-5 py-2 text-sm font-medium ${pub ? "bg-foreground text-background" : "text-foreground/40"}`;
   }
   toggleFamily.addEventListener("click", () => setToggle(false));
   togglePublic.addEventListener("click", () => setToggle(true));
