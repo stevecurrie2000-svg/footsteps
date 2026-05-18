@@ -13,7 +13,7 @@ boundaries.
 | Item | State |
 |---|---|
 | Live site | `footsteps.gallery` + `footsteps.stevecurrie2000.workers.dev` |
-| Deployment model | Cloudflare **Worker** (not Pages), manual `wrangler deploy` |
+| Deployment model | Cloudflare **Worker** (not Pages), auto-deploy via GitHub Actions on push to main |
 | Phase 1 — Foundations | ✅ Done |
 | Phase 2 — Country/city pages | ✅ Done |
 | Phase 3 — Storage & database | ✅ Done — first photo live |
@@ -111,11 +111,11 @@ Will include:
 - Admin upload page (drag-and-drop multi-file)
 - EXIF parsing on upload (already prototyped in `scripts/upload-photo.js`,
   to be ported into a server-side route)
-- Reverse geocoding (Nominatim or OpenCage)
+- Reverse geocoding via Nominatim
 - Auto-creation of new country entries
 - Per-photo public/private toggle (default private)
-- Admin authentication (likely via Cloudflare Access, same mechanism
-  planned for Phase 5 family section)
+- Admin authentication via Cloudflare Access, same mechanism planned
+  for Phase 5 family section
 
 ---
 
@@ -152,12 +152,6 @@ Will include:
   Phase 5.
 - **Watermark**: Not yet decided whether to add a subtle watermark to
   public photos.
-- **Auto-deploy pipeline**: Confirmed direction is GitHub Actions →
-  Workers (not Pages migration). Workflow not yet written.
-- **Over-scoped API token cleanup**: `footsteps build token` (24
-  permissions, all zones, all users, no expiry) is left over from
-  earlier sessions. To be deleted once GitHub Actions auto-deploy is
-  configured (in case it's the credential being used to deploy).
 
 ---
 
