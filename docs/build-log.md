@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 18 May 2026, post GitHub Actions auto-deploy
+**Last updated**: 18 May 2026, end of Phase 4 Slice 1 build session
 
 | Item | State |
 |---|---|
@@ -17,10 +17,10 @@ boundaries.
 | Phase 1 — Foundations | ✅ Done |
 | Phase 2 — Country/city pages | ✅ Done |
 | Phase 3 — Storage & database | ✅ Done — first photo live |
-| Phase 4 — Admin upload pipeline | ⏳ Not started |
+| Phase 4 — Admin upload pipeline | 🔄 Slice 1 substantially complete, Slices 2–5 pending |
 | Phase 5 — Family section + Access | ⏳ Not started |
 | Phase 6 — Polish | ⏳ Not started |
-| Next immediate task | Phase 4 Slice 1 — admin upload route with Cloudflare Access |
+| Next immediate task | Cloudflare cache purge + final Slice 1 verification, then start Slice 2 — EXIF parsing on upload |
 
 ---
 
@@ -469,6 +469,203 @@ session still live. Decided to knock out auto-deploy before starting Phase
   Continuing the discipline from Phase 3. Three tokens now exist
   (upload-script, github-actions, [deleted: footsteps build token]),
   all narrowly scoped, all dated.
+
+---
+
+### Session: Phase 4 Slice 1 — Admin upload pipeline (May 2026)
+
+**Context**: First slice of Phase 4. Goal: server-side upload route +
+Cloudflare Access in front of `/admin/*`, with drag-and-drop multi-file
+upload, manual per-photo country/city, public/family toggle. No EXIF, no
+geocoding, no bulk edit (those are Slices 2–5).
+
+**What was built/changed**:
+
+- **Cloudflare Access setup (new)**:
+  - Google Cloud OAuth client `Footsteps Cloudflare Access` created in
+    Google Cloud project `Footsteps` (External, Testing mode,
+    `stevecurrie2000@gmail.com` as the sole test user).
+  - Cloudflare Zero Trust team domain auto-set to
+    `silent-bonus-1d5b.cloudflareaccess.com` (kept as-is — never user-visible
+    after Instant Auth).
+  - Google added as Identity Provider in Cloudflare. Plain Google, not
+    Google Workspace.
+  - Access application `Footsteps Admin`, 24h session, gates two
+    destinations: `footsteps.gallery/admin` and `footsteps.gallery/api/admin`.
+    Policy `Admin only`, Allow, Include Emails = `stevecurrie2000@gmail.com`.
+    Instant Auth on.
+
+- **New files**:
+  - `src/lib/admin-auth.ts` — `ADMIN_EMAILS` allowlist, `getAdminEmail(request)`,
+    `requireAdmin(request)`. Reads `Cf-Access-Authenticated-User-Email`
+    header. JSDoc notes Phase 6 hardening item (JWT signature validation
+    against Cloudflare's JWKS).
+  - `src/pages/api/admin/countries.ts` — GET endpoint returning all
+    countries from D1 as JSON. Auth-gated.
+  - `src/pages/api/admin/cities.ts` — GET endpoint returning cities
+    filtered by country slug query param. Auth-gated, parameterised query.
+  - `src/pages/admin/index.astro` — Admin upload page. Server-side auth
+    in frontmatter, client-side `<script>` for drag-and-drop file
+    selection (multi-file, JPEG/PNG only), thumbnail previews with ×
+    remove, country/city dropdowns (city repopulates on country change
+    with "Loading…" placeholder), Family/Public pill toggle, optional
+    caption, sequential per-file upload with status reporting.
+  - `src/pages/api/admin/upload.ts` — POST endpoint. Validates four image
+    blobs, total combined size ≤50MB, country/city existence in D1.
+    Generates UUID. Uploads four R2 variants in parallel via `Promise.all`.
+    Inserts photo row into D1 with parameterised binds. Returns 201
+    with photo id.
+
+- **Client-side resizing**: Browser does the four-variant resize via native
+  `<canvas>` API. Thumb=400px, medium=1200px, full=2400px, original=4000px
+  on longest side. JPEG quality 0.80 / 0.85 / 0.90 / 0.95.
+  `imageSmoothingQuality = "high"`. Original blobs revoked after processing.
+  This sidesteps Cloudflare Images pricing — the binding is bypassed;
+  Worker only does auth + R2 PUT + D1 INSERT.
+
+- **Cleanup**:
+  - Deleted `scripts/upload-photo.js` and `scripts/README.md` (web upload
+    supersedes the Node-based upload script). `scripts/` directory removed.
+  - Removed `dotenv` dev dependency from `package.json`.
+  - Deleted `footsteps continue.txt` (Claude Code session handoff
+    artefact); added to `.gitignore`.
+
+- **Polish follow-up (same session, second commit)**:
+  - Tailwind v4 production scanner didn't pick up arbitrary hex classes
+    (`bg-[#fafafa]`, `text-[#fafafa]/40`). Replaced all such classes
+    throughout the admin page with theme tokens (`bg-foreground`,
+    `text-foreground/40`, `bg-background`, `text-background`) which
+    `@theme` in `src/styles/global.css` already exposes.
+  - Removed `this.value = ""` reset from the `fileInput` change handler
+    — it was firing a spurious second `change` event with an empty file
+    list on first selection, producing a visible flash and double-prompt.
+    The file input is already cleared at the end of a successful upload
+    batch.
+
+**Decisions made**:
+
+- **Authentication: Google SSO via Cloudflare Access** (not one-time PIN).
+  Slicker login from already-signed-in browsers. Single admin email allowlist.
+- **Admin route layout**: single `/admin` page for Slice 1. Will split into
+  `/admin/upload`, `/admin/photos`, `/admin/countries` if and when Slices
+  4/5 warrant it. Not before.
+- **Form fields**: file picker, country dropdown (D1-populated), city
+  dropdown (D1-populated, filtered by country), Family/Public toggle (Family
+  default), optional caption (≤200 chars). All four metadata fields apply to
+  the whole batch — per-file metadata is Slice 4.
+- **City field**: dropdown only (no free-text, no "add new"). Validation by
+  construction — can't pick a city that isn't in the country. Adding new
+  countries pre-Slice-3 means SQL inserts; acceptable for the short window.
+- **Image resizing**: client-side via `<canvas>`, not Cloudflare Images
+  binding. Avoids the per-transformation billing. Workers only handle auth
+  + storage.
+- **Upload script removal**: deleted now, not deferred. Reasoning revisited
+  mid-session and confirmed.
+- **Cloudflare Access destination scope**: both `/admin` and `/api/admin`
+  gated by the same application, same policy. First version only gated
+  `/admin`, which caused 403s on the API endpoints because the Worker
+  didn't see the `Cf-Access-Authenticated-User-Email` header. Pattern to
+  remember for Phase 5: gate the page paths AND any `/api/*` paths the
+  page calls.
+- **`footsteps continue.txt`**: deleted and added to `.gitignore`.
+  `build-log.md` is the canonical session-handoff record; parallel handoff
+  files fragment the source of truth.
+
+**Verified working**:
+- ✅ `/admin` returns the 403 challenge to unauthenticated requests
+- ✅ Google sign-in flow completes for `stevecurrie2000@gmail.com`
+- ✅ Authenticated `/admin` page renders, shows the signed-in email
+- ✅ Country dropdown populates from D1 (UK, France, Italy, Spain)
+- ✅ City dropdown repopulates on country change (London + seeded UK city)
+- ✅ End-to-end upload: Family photo → R2 (4 variants verified) → D1 row
+  → 201 response
+- ✅ End-to-end upload: Public photo → same → also appears on
+  `/countries/united-kingdom`
+- ✅ Family photos correctly hidden from `/countries/united-kingdom` (the
+  existing public country page filter on `is_public=1` already does the
+  right thing)
+- ✅ Both Slice 1 commits (`feat: phase 4 slice 1` + `fix: phase 4 slice 1
+  polish`) auto-deployed via GitHub Actions, confirmed green in the
+  Actions tab.
+
+**Left unfinished** (for the next session):
+- **Cache purge + final visual confirmation**. After the polish commit
+  deployed (confirmed green in GitHub Actions), a fresh-incognito visit
+  to `/admin` still showed the pre-polish appearance (unstyled, file
+  picker double-prompt). Worker version is current; almost certainly
+  Cloudflare edge cache holding old HTML/JS. Next session: purge
+  Cloudflare cache via dashboard (or use the API), then revisit `/admin`
+  in a brand-new incognito window. Cosmetic only — functionally Slice 1
+  is verified end-to-end.
+- **`docs/footsteps_architecture_post_phase_3.svg`** untracked in working
+  tree. Provenance unclear — likely a previous session artefact. Decision
+  deferred: commit as a docs commit or leave alone.
+- **`infrastructure.md` doc** — still not created. Three API tokens to
+  document (`footsteps-upload-script` is now obsolete since the upload
+  script is deleted — should be revoked in Cloudflare;
+  `footsteps-github-actions-deploy` is the active deploy credential; the
+  deleted `footsteps build token` was tidied earlier).
+- **Revoke `footsteps-upload-script` API token in Cloudflare** — script
+  gone, token no longer needed. Defence-in-depth cleanup. Non-urgent.
+
+**Issues encountered (worth recording)**:
+
+- **Cloudflare Access only injects identity headers on requests it has gated.**
+  A Worker route handling `/api/admin/*` while only `/admin/*` is gated will
+  see requests without the `Cf-Access-Authenticated-User-Email` header —
+  `requireAdmin` correctly 403s these. Fix: add `/api/admin` as a second
+  destination on the same Access application. Worth repeating: gate both
+  the page paths AND the API paths the page calls. Same pattern will apply
+  to Phase 5's family section.
+
+- **Tailwind v4 production CSS scanner is unreliable for arbitrary-value
+  classes**, particularly with opacity suffixes (`text-[#fafafa]/40`).
+  Symptom: locally everything looks fine; in production the page renders
+  with browser defaults. Fix: use named theme tokens from the `@theme`
+  block in `src/styles/global.css`. The project's existing
+  `--color-background` and `--color-foreground` definitions expose
+  `bg-background`, `text-foreground`, etc., with all standard variants and
+  reliable opacity (`text-foreground/40`). Rule for future work: prefer
+  theme tokens over arbitrary hex classes throughout this project.
+
+- **Resetting `<input type="file">.value` inside its own `change` event
+  handler fires a second `change` event** with an empty `FileList`.
+  Cosmetic effect varies by browser. Don't reset value inside the change
+  handler; clear it at the end of a successful upload batch instead.
+
+- **`git add -A` is dangerous when there are unrelated untracked files in
+  the working tree.** During this session, an untracked SVG and a Claude
+  Code handoff file got staged accidentally. Discipline: explicit
+  `git add -- file1 file2` ahead of any commit that's narrowly scoped, and
+  `git status` before every `git commit` to confirm the staged list.
+
+- **Cloudflare's CDN may cache page HTML even after a Worker deploy.**
+  GitHub Actions reports the deploy as green and the Worker version
+  number updates, but visitors can still receive cached HTML/JS from edge
+  nodes for some time. Symptom: post-deploy testing in a fresh-incognito
+  session shows pre-deploy behaviour. The truth-test is the Worker version
+  in the Cloudflare dashboard, not the rendered page. Recovery: dashboard
+  cache purge, or `wrangler` API call to purge cache. Worth knowing for any
+  "the deploy didn't work" moment going forward.
+
+**Lessons learned this session** (to fold into Lessons):
+
+- **Gate API paths alongside page paths in Cloudflare Access.** Page route
+  + API route under separate destinations on the same Access app is the
+  pattern. One app, two destinations, same policy.
+- **Tailwind v4 + production CSS = use theme tokens, not arbitrary values.**
+  Define design tokens in `@theme {}` in `global.css`. Use the generated
+  utilities throughout. Avoid `bg-[#hex]` patterns.
+- **Don't reset `<input type="file">.value` in a change handler.** Clear
+  it on success/reset, not on every change.
+- **Be explicit about staged files in narrow commits.** `git add -A` is
+  for sweeping commits; targeted commits deserve targeted staging.
+- **Cloudflare team domain auto-naming is fine for personal-project gates.**
+  Not user-visible after Instant Auth. The one-time-rename limit is not
+  worth using on aesthetics.
+- **Cloudflare may serve cached HTML after a successful Worker deploy.**
+  The Worker version dashboard is the source of truth, not the rendered
+  page. Cache purge if there's a mismatch.
 
 ---
 
