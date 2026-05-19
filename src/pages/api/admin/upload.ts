@@ -14,8 +14,6 @@ export const POST: APIRoute = async ({ request }) => {
   const country      = ((form.get("country")  as string | null) ?? "").trim();
   const city         = ((form.get("city")     as string | null) ?? "").trim();
   const isPublic     = form.get("is_public") === "1";
-  const captionRaw   = ((form.get("caption")  as string | null) ?? "").trim();
-  const caption      = captionRaw.length > 0 ? captionRaw : null;
 
   const captureDateRaw     = ((form.get("capture_date")      as string | null) ?? "").trim();
   const latitudeRaw        = ((form.get("latitude")          as string | null) ?? "").trim();
@@ -217,16 +215,15 @@ export const POST: APIRoute = async ({ request }) => {
     const batchStmts = [
       env.DB.prepare(
         `INSERT INTO photos
-           (id, city_id, country_id, is_public, caption,
+           (id, city_id, country_id, is_public,
             capture_date, latitude, longitude, original_filename,
             r2_key_thumb, r2_key_medium, r2_key_full, r2_key_original)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`
       ).bind(
         id,
         cityId,
         countryId,
         isPublic ? 1 : 0,
-        caption,
         captureDate,
         latitude,
         longitude,
@@ -253,7 +250,7 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   return new Response(
-    JSON.stringify({ id, country, city, is_public: isPublic, caption }),
+    JSON.stringify({ id, country, city, is_public: isPublic }),
     {
       status: 201,
       headers: { "Content-Type": "application/json" },
