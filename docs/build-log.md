@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 19 May 2026, end of Slice 5 build session
+**Last updated**: 19 May 2026, end of Phase 4 Slice 5 session
 
 | Item | State |
 |---|---|
@@ -21,10 +21,10 @@ boundaries.
 | Phase 4 Slice 2 — EXIF parsing | ✅ Done |
 | Phase 4 Slice 3 — Nominatim geocoding + auto-create | ✅ Done |
 | Phase 4 Slice 4 — Per-file review table | ✅ Done |
-| Phase 4 Slice 5 — `/admin/countries` management | ✅ Done — deployed, awaiting Access config + verification |
-| Phase 5 — Family section + Access | ⏳ Not started |
+| Phase 4 Slice 5 — `/admin/countries` management | ✅ Done |
+| Phase 5 — Family section + Access | ⏳ Not started — next session |
 | Phase 6 — Polish | ⏳ Not started |
-| Next immediate task | 1. Add Cloudflare Access destinations for new routes (see Slice 5 session entry). 2. Run 14-step launch-state verification. 3. Update project knowledge. |
+| Next immediate task | Start Phase 5 — family section structure + Cloudflare Access app |
 
 ---
 
