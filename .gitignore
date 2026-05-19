@@ -24,7 +24,7 @@ pnpm-debug.log*
 .DS_Store
 
 # Local test photos — never commit actual photos to the repo
-photos/
+/photos/
 
 # jetbrains setting folder
 .idea/

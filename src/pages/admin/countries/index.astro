@@ -1,0 +1,447 @@
+---
+export const prerender = false;
+
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { requireAdmin } from "../../../lib/admin-auth";
+import AdminModal from "../../../components/AdminModal.astro";
+
+const adminCheck = requireAdmin(Astro.request);
+if (adminCheck instanceof Response) return adminCheck;
+---
+
+<BaseLayout title="Countries & Cities — Admin">
+  <div class="mx-auto max-w-5xl px-6 py-10">
+
+    <!-- Header -->
+    <div class="mb-8 flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <a
+          href="/admin"
+          class="mb-2 inline-block text-xs uppercase tracking-widest text-foreground/40 hover:text-foreground/70 transition-colors"
+        >
+          &larr; Upload
+        </a>
+        <h1 class="text-3xl font-bold" style="font-family:'Playfair Display',Georgia,serif;">
+          Countries &amp; Cities
+        </h1>
+      </div>
+      <button
+        id="add-country-btn"
+        class="border border-white/20 px-4 py-2 text-sm text-foreground/80 hover:border-white/40 hover:text-foreground rounded transition-colors"
+      >
+        + Add Country
+      </button>
+    </div>
+
+    <!-- Add country form -->
+    <div id="add-country-form" class="hidden mb-6 border border-white/10 rounded p-4">
+      <div class="flex flex-wrap items-center gap-3">
+        <input
+          id="new-country-name"
+          type="text"
+          placeholder="Country name (e.g. Australia)"
+          class="flex-1 min-w-48 bg-white/5 border border-white/20 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-white/40"
+        />
+        <span id="new-country-slug-preview" class="text-foreground/40 text-xs min-w-16"></span>
+        <button
+          id="add-country-submit"
+          class="bg-foreground text-background text-sm px-4 py-1.5 rounded hover:opacity-90"
+        >
+          Add Country
+        </button>
+        <button
+          id="add-country-cancel"
+          class="text-sm text-foreground/60 hover:text-foreground px-2 py-1.5"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+
+    <!-- Countries list -->
+    <div id="countries-container">
+      <p id="loading-msg" class="text-foreground/40 py-8 text-center">Loading…</p>
+    </div>
+
+  </div>
+
+  <AdminModal />
+</BaseLayout>
+
+<script is:inline>
+(function () {
+
+  var container = document.getElementById('countries-container');
+  var countriesData = [];
+  var expandedSlugs = new Set();
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  function escHtml(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function slugify(name) {
+    return String(name)
+      .normalize('NFD').replace(/\p{M}/gu, '')
+      .toLowerCase()
+      .replace(/['']/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  function getCountry(slug) {
+    return countriesData.find(function (c) { return c.slug === slug; });
+  }
+
+  // ── Fetch + render ────────────────────────────────────────────────────────
+
+  async function loadAndRender() {
+    try {
+      var res = await fetch('/api/admin/countries/list');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      countriesData = await res.json();
+    } catch (err) {
+      container.innerHTML = '<p class="text-red-400 py-8 text-center">Failed to load: ' + escHtml(String(err)) + '</p>';
+      return;
+    }
+    renderAll();
+  }
+
+  function renderAll() {
+    if (!countriesData.length) {
+      container.innerHTML = '<p class="text-foreground/40 py-8 text-center">No countries yet.</p>';
+      return;
+    }
+    container.innerHTML = '';
+    countriesData.forEach(function (country) {
+      container.appendChild(buildCard(country));
+    });
+    // Restore expanded state
+    expandedSlugs.forEach(function (slug) {
+      var card = container.querySelector('[data-cslug="' + CSS.escape(slug) + '"]');
+      if (!card) return;
+      card.querySelector('.cities-section').classList.remove('hidden');
+      card.querySelector('[data-action="toggle-expand"]').textContent = '▼';
+    });
+  }
+
+  function buildCard(country) {
+    var div = document.createElement('div');
+    div.className = 'border border-white/10 mb-3 rounded';
+    div.setAttribute('data-cslug', country.slug);
+    div.setAttribute('data-cid', String(country.id));
+
+    var pubThumb = country.public_thumbnail_key
+      ? '<img src="/i/' + escHtml(country.public_thumbnail_key) + '" alt="" class="w-full h-full object-cover" loading="lazy" />'
+      : '<span class="text-foreground/20 text-xs">None</span>';
+    var famThumb = country.family_thumbnail_key
+      ? '<img src="/i/' + escHtml(country.family_thumbnail_key) + '" alt="" class="w-full h-full object-cover" loading="lazy" />'
+      : '<span class="text-foreground/20 text-xs">None</span>';
+
+    var cities = country.cities || [];
+    var cityRows = cities.map(function (city) {
+      return '<div class="flex flex-wrap items-center gap-3 px-6 py-3 border-b border-white/5 last:border-0"' +
+        ' data-cityid="' + escHtml(String(city.id)) + '"' +
+        ' data-cityname="' + escHtml(city.name) + '">' +
+        '<span class="flex-1 text-sm">' + escHtml(city.name) + '</span>' +
+        '<span class="text-foreground/40 text-xs whitespace-nowrap">' + escHtml(city.slug) + ' · ' + city.photo_count + ' ' + (city.photo_count === 1 ? 'photo' : 'photos') + '</span>' +
+        '<button data-action="manage-photos" class="text-xs text-foreground/60 hover:text-foreground border border-white/10 px-2 py-1 rounded transition-colors">Manage photos</button>' +
+        '<button data-action="rename-city" class="text-xs text-foreground/60 hover:text-foreground border border-white/10 px-2 py-1 rounded transition-colors">Rename</button>' +
+        '<button data-action="delete-city" class="text-xs text-red-400 hover:text-red-300 border border-red-500/20 hover:border-red-500/40 px-2 py-1 rounded transition-colors">Delete</button>' +
+        '</div>';
+    }).join('');
+
+    div.innerHTML =
+      // ── Header row ──────────────────────────────────────────────────────
+      '<div class="flex flex-wrap items-center gap-3 p-4">' +
+        '<button data-action="toggle-expand" class="w-5 text-sm text-foreground/40 flex-shrink-0">▶</button>' +
+        '<div class="flex-1 min-w-0 flex items-center gap-2">' +
+          '<span class="font-semibold truncate">' + escHtml(country.name) + '</span>' +
+          '<span class="text-foreground/40 text-xs">' + escHtml(country.slug) + '</span>' +
+        '</div>' +
+        '<span class="text-foreground/40 text-xs whitespace-nowrap">' +
+          country.photo_count + ' photos · ' + country.public_photo_count + ' public · ' +
+          cities.length + ' ' + (cities.length === 1 ? 'city' : 'cities') +
+        '</span>' +
+        '<div class="flex items-center gap-2">' +
+          '<button data-action="show-rename" class="text-xs text-foreground/60 hover:text-foreground border border-white/10 px-2 py-1 rounded transition-colors">Rename</button>' +
+          '<button data-action="delete-country" class="text-xs text-red-400 hover:text-red-300 border border-red-500/20 hover:border-red-500/40 px-2 py-1 rounded transition-colors">Delete</button>' +
+        '</div>' +
+      '</div>' +
+
+      // ── Rename form (hidden) ─────────────────────────────────────────────
+      '<div class="rename-form hidden px-4 pb-4 flex flex-wrap items-center gap-3">' +
+        '<input type="text" class="rename-input flex-1 min-w-40 bg-white/5 border border-white/20 rounded px-2 py-1 text-sm focus:outline-none focus:border-white/40" />' +
+        '<span class="slug-preview text-foreground/40 text-xs"></span>' +
+        '<button data-action="save-rename" class="text-xs bg-foreground text-background px-3 py-1.5 rounded hover:opacity-90">Save</button>' +
+        '<button data-action="cancel-rename" class="text-xs text-foreground/60 hover:text-foreground px-2 py-1">Cancel</button>' +
+      '</div>' +
+
+      // ── Thumbnails ───────────────────────────────────────────────────────
+      '<div class="px-4 pb-4 flex gap-6">' +
+        '<div class="flex flex-col gap-1">' +
+          '<span class="text-xs text-foreground/40">Public thumbnail</span>' +
+          '<div class="flex items-center gap-2">' +
+            '<div class="w-12 h-12 bg-white/5 rounded overflow-hidden flex items-center justify-center flex-shrink-0">' + pubThumb + '</div>' +
+            '<button data-action="set-public-thumb" class="text-xs text-foreground/60 hover:text-foreground transition-colors">Change</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="flex flex-col gap-1">' +
+          '<span class="text-xs text-foreground/40">Family thumbnail</span>' +
+          '<div class="flex items-center gap-2">' +
+            '<div class="w-12 h-12 bg-white/5 rounded overflow-hidden flex items-center justify-center flex-shrink-0">' + famThumb + '</div>' +
+            '<button data-action="set-family-thumb" class="text-xs text-foreground/60 hover:text-foreground transition-colors">Change</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+
+      // ── Cities section (expanded) ────────────────────────────────────────
+      '<div class="cities-section hidden border-t border-white/10">' +
+        (cityRows || '<p class="px-6 py-3 text-foreground/40 text-sm">No cities yet.</p>') +
+        '<div class="add-city-form px-6 py-4 flex items-center gap-3">' +
+          '<input type="text" class="new-city-input bg-white/5 border border-white/20 rounded px-2 py-1 text-sm focus:outline-none focus:border-white/40 w-48" placeholder="New city name" />' +
+          '<button data-action="add-city" class="text-xs bg-foreground text-background px-3 py-1.5 rounded hover:opacity-90">Add City</button>' +
+        '</div>' +
+      '</div>';
+
+    // Wire up the rename input's live slug preview
+    var renameInput = div.querySelector('.rename-input');
+    var slugPreview = div.querySelector('.rename-form .slug-preview');
+    renameInput.addEventListener('input', function () {
+      slugPreview.textContent = slugify(renameInput.value);
+    });
+
+    return div;
+  }
+
+  // ── Event delegation ──────────────────────────────────────────────────────
+
+  container.addEventListener('click', async function (e) {
+    var btn = e.target.closest('[data-action]');
+    if (!btn) return;
+
+    var action = btn.dataset.action;
+    var card = btn.closest('[data-cslug]');
+    var slug = card && card.dataset.cslug;
+    var cityRow = btn.closest('[data-cityid]');
+    var cityId = cityRow && parseInt(cityRow.dataset.cityid);
+    var cityName = cityRow && cityRow.dataset.cityname;
+
+    // ── Country actions ────────────────────────────────────────────────────
+
+    if (action === 'toggle-expand') {
+      var sec = card.querySelector('.cities-section');
+      var isNowHidden = sec.classList.toggle('hidden');
+      btn.textContent = isNowHidden ? '▶' : '▼';
+      if (isNowHidden) expandedSlugs.delete(slug);
+      else expandedSlugs.add(slug);
+      return;
+    }
+
+    if (action === 'show-rename') {
+      var rf = card.querySelector('.rename-form');
+      var ri = rf.querySelector('.rename-input');
+      var sp = rf.querySelector('.slug-preview');
+      var country = getCountry(slug);
+      ri.value = country ? country.name : '';
+      sp.textContent = slugify(ri.value);
+      rf.classList.remove('hidden');
+      ri.focus();
+      return;
+    }
+
+    if (action === 'cancel-rename') {
+      card.querySelector('.rename-form').classList.add('hidden');
+      return;
+    }
+
+    if (action === 'save-rename') {
+      var ri2 = card.querySelector('.rename-input');
+      var newName = ri2.value.trim();
+      var newSlug = slugify(newName);
+      if (!newName || !newSlug) return;
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        var res = await fetch('/api/admin/countries/' + encodeURIComponent(slug), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newName }),
+        });
+        if (!res.ok) { var e2 = await res.json(); alert(e2.error || 'Failed to rename'); btn.disabled = false; btn.textContent = 'Save'; return; }
+        var updated = await res.json();
+        if (expandedSlugs.has(slug)) { expandedSlugs.delete(slug); expandedSlugs.add(updated.slug); }
+        await loadAndRender();
+      } catch (err) { alert('Failed to rename'); btn.disabled = false; btn.textContent = 'Save'; }
+      return;
+    }
+
+    if (action === 'delete-country') {
+      var preview;
+      try {
+        var pr = await fetch('/api/admin/countries/' + encodeURIComponent(slug) + '/delete-preview');
+        preview = await pr.json();
+      } catch { alert('Failed to load preview'); return; }
+      var c2 = getCountry(slug);
+      var msg = 'Delete "' + (c2 ? c2.name : slug) + '"?\n\nPermanently removes:\n• ' + preview.city_count + ' ' + (preview.city_count === 1 ? 'city' : 'cities') + '\n• ' + preview.photo_count + ' ' + (preview.photo_count === 1 ? 'photo' : 'photos') + ' (from R2)\n\nThis cannot be undone.';
+      if (!window.confirm(msg)) return;
+      btn.disabled = true;
+      try {
+        var dr = await fetch('/api/admin/countries/' + encodeURIComponent(slug), { method: 'DELETE' });
+        if (!dr.ok) { var de = await dr.json(); alert(de.error || 'Failed to delete'); btn.disabled = false; return; }
+        expandedSlugs.delete(slug);
+        await loadAndRender();
+      } catch { alert('Failed to delete'); btn.disabled = false; }
+      return;
+    }
+
+    if (action === 'set-public-thumb' || action === 'set-family-thumb') {
+      var col = action === 'set-public-thumb' ? 'public' : 'family';
+      var colKey = col + '_thumbnail_photo_id';
+      var c3 = getCountry(slug);
+      var currentId = c3 ? c3[colKey] : null;
+      var picked = await window.AdminModal.openThumbnailPicker(slug, col, currentId);
+      if (!picked) return;
+      try {
+        var tr = await fetch('/api/admin/countries/' + encodeURIComponent(slug), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [colKey]: picked.id }),
+        });
+        if (!tr.ok) { var te = await tr.json(); alert(te.error || 'Failed to set thumbnail'); return; }
+        await loadAndRender();
+      } catch { alert('Failed to set thumbnail'); }
+      return;
+    }
+
+    // ── City actions ───────────────────────────────────────────────────────
+
+    if (action === 'rename-city') {
+      cityRow.innerHTML =
+        '<div class="flex flex-wrap items-center gap-3 px-6 py-3">' +
+          '<input type="text" class="city-rename-input flex-1 min-w-32 bg-white/5 border border-white/20 rounded px-2 py-1 text-sm focus:outline-none" value="' + escHtml(cityName) + '" />' +
+          '<span class="city-slug-preview text-foreground/40 text-xs">' + escHtml(slugify(cityName)) + '</span>' +
+          '<button data-action="save-rename-city" class="text-xs bg-foreground text-background px-3 py-1.5 rounded hover:opacity-90">Save</button>' +
+          '<button data-action="cancel-rename-city" class="text-xs text-foreground/60 hover:text-foreground px-2 py-1">Cancel</button>' +
+        '</div>';
+      var cri = cityRow.querySelector('.city-rename-input');
+      var csp = cityRow.querySelector('.city-slug-preview');
+      cri.addEventListener('input', function () { csp.textContent = slugify(cri.value); });
+      cri.focus();
+      return;
+    }
+
+    if (action === 'save-rename-city') {
+      var cri2 = cityRow.querySelector('.city-rename-input');
+      var newCityName = cri2 ? cri2.value.trim() : '';
+      if (!newCityName) return;
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        var cr = await fetch('/api/admin/cities/' + cityId, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newCityName }),
+        });
+        if (!cr.ok) { var ce = await cr.json(); alert(ce.error || 'Failed to rename'); btn.disabled = false; btn.textContent = 'Save'; return; }
+        await loadAndRender();
+      } catch { alert('Failed to rename city'); btn.disabled = false; btn.textContent = 'Save'; }
+      return;
+    }
+
+    if (action === 'cancel-rename-city') {
+      await loadAndRender();
+      return;
+    }
+
+    if (action === 'delete-city') {
+      var cpv;
+      try {
+        var cpr = await fetch('/api/admin/cities/' + cityId + '/delete-preview');
+        cpv = await cpr.json();
+      } catch { alert('Failed to load preview'); return; }
+      var cmsg = 'Delete "' + escHtml(cityName) + '"?\n\nPermanently removes:\n• ' + cpv.photo_count + ' ' + (cpv.photo_count === 1 ? 'photo' : 'photos') + ' (from R2)\n\nThis cannot be undone.';
+      if (!window.confirm(cmsg)) return;
+      btn.disabled = true;
+      try {
+        var cdr = await fetch('/api/admin/cities/' + cityId, { method: 'DELETE' });
+        if (!cdr.ok) { var cde = await cdr.json(); alert(cde.error || 'Failed to delete'); btn.disabled = false; return; }
+        await loadAndRender();
+      } catch { alert('Failed to delete city'); btn.disabled = false; }
+      return;
+    }
+
+    if (action === 'add-city') {
+      var acf = card.querySelector('.add-city-form');
+      var aci = acf.querySelector('.new-city-input');
+      var acName = aci.value.trim();
+      if (!acName) return;
+      btn.disabled = true;
+      try {
+        var acr = await fetch('/api/admin/cities', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ country_slug: slug, name: acName }),
+        });
+        if (!acr.ok) { var ace = await acr.json(); alert(ace.error || 'Failed to add city'); btn.disabled = false; return; }
+        aci.value = '';
+        await loadAndRender();
+      } catch { alert('Failed to add city'); btn.disabled = false; }
+      return;
+    }
+
+    if (action === 'manage-photos') {
+      await window.AdminModal.openPhotoManager(slug, cityId, cityName);
+      await loadAndRender();
+      return;
+    }
+  });
+
+  // ── Add country form ──────────────────────────────────────────────────────
+
+  var addBtn = document.getElementById('add-country-btn');
+  var addForm = document.getElementById('add-country-form');
+  var addName = document.getElementById('new-country-name');
+  var addSlugPreview = document.getElementById('new-country-slug-preview');
+  var addSubmit = document.getElementById('add-country-submit');
+  var addCancel = document.getElementById('add-country-cancel');
+
+  addBtn.addEventListener('click', function () {
+    addForm.classList.toggle('hidden');
+    if (!addForm.classList.contains('hidden')) addName.focus();
+  });
+
+  addCancel.addEventListener('click', function () {
+    addForm.classList.add('hidden');
+    addName.value = '';
+    addSlugPreview.textContent = '';
+  });
+
+  addName.addEventListener('input', function () {
+    addSlugPreview.textContent = slugify(addName.value);
+  });
+
+  addSubmit.addEventListener('click', async function () {
+    var name = addName.value.trim();
+    var slug = slugify(name);
+    if (!name || !slug) return;
+    addSubmit.disabled = true; addSubmit.textContent = 'Adding…';
+    try {
+      var r = await fetch('/api/admin/countries/' + encodeURIComponent(slug), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name }),
+      });
+      if (!r.ok) { var err = await r.json(); alert(err.error || 'Failed to add country'); addSubmit.disabled = false; addSubmit.textContent = 'Add Country'; return; }
+      addName.value = ''; addSlugPreview.textContent = '';
+      addForm.classList.add('hidden');
+      await loadAndRender();
+    } catch { alert('Failed to add country'); addSubmit.disabled = false; addSubmit.textContent = 'Add Country'; }
+  });
+
+  // ── Boot ─────────────────────────────────────────────────────────────────
+  loadAndRender();
+
+}());
+</script>

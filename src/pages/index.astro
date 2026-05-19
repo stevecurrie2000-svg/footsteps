@@ -4,14 +4,18 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
 const { results: countries } = await env.DB
   .prepare(
-    `SELECT id, slug, name FROM countries
+    `SELECT c.id, c.slug, c.name, p.r2_key_thumb AS thumbnail_key
+     FROM countries c
+     LEFT JOIN photos p ON p.id = c.public_thumbnail_photo_id
      WHERE EXISTS (
-       SELECT 1 FROM photos
-       WHERE photos.country_id = countries.id AND photos.is_public = 1
+       SELECT 1 FROM photos ph WHERE ph.country_id = c.id AND ph.is_public = 1
      )
-     ORDER BY sort_order`
+     ORDER BY (
+       SELECT MAX(ph2.created_at) FROM photos ph2
+       WHERE ph2.country_id = c.id AND ph2.is_public = 1
+     ) DESC`
   )
-  .all<{ id: number; slug: string; name: string }>();
+  .all<{ id: number; slug: string; name: string; thumbnail_key: string | null }>();
 ---
 
 <BaseLayout title="Footsteps — Europe Photography">
@@ -34,6 +38,14 @@ const { results: countries } = await env.DB
             href={`/countries/${country.slug}`}
             class="group relative block aspect-square overflow-hidden bg-zinc-800 transition-opacity duration-300 hover:opacity-90"
           >
+            {country.thumbnail_key && (
+              <img
+                src={`/i/${country.thumbnail_key}`}
+                alt=""
+                class="absolute inset-0 h-full w-full object-cover"
+                loading="lazy"
+              />
+            )}
             <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
             <div class="absolute bottom-0 left-0 p-6">
               <h2

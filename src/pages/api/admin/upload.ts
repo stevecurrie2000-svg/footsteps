@@ -233,10 +233,16 @@ export const POST: APIRoute = async ({ request }) => {
         fullKey,
         originalKey,
       ),
-      // Set thumbnail on the country if none is set yet — only for public photos
+      // New country: always set family thumbnail; public photos also set public thumbnail.
+      // Existing country: only set public thumbnail when null and photo is public.
+      ...(isNewCountry ? [
+        env.DB.prepare(
+          `UPDATE countries SET family_thumbnail_photo_id = ?1 WHERE id = ?2 AND family_thumbnail_photo_id IS NULL`
+        ).bind(id, countryId),
+      ] : []),
       ...(isPublic ? [
         env.DB.prepare(
-          `UPDATE countries SET thumbnail_photo_id = ?1 WHERE id = ?2 AND thumbnail_photo_id IS NULL`
+          `UPDATE countries SET public_thumbnail_photo_id = ?1 WHERE id = ?2 AND public_thumbnail_photo_id IS NULL`
         ).bind(id, countryId),
       ] : []),
     ];

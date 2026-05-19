@@ -1,0 +1,161 @@
+<!-- Shared modal for thumbnail picking and photo management in admin pages. -->
+<!-- Exposes window.AdminModal with openThumbnailPicker, openPhotoManager, confirm, close. -->
+
+<div id="admin-modal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true">
+  <div id="admin-modal-backdrop" class="absolute inset-0 bg-black/80"></div>
+  <div
+    id="admin-modal-panel"
+    class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl max-h-[85vh] bg-background border border-white/20 rounded flex flex-col overflow-hidden"
+  >
+    <div class="flex items-center justify-between px-6 py-4 border-b border-white/10 flex-shrink-0">
+      <h2 id="admin-modal-title" class="text-base font-semibold"></h2>
+      <button
+        id="admin-modal-close-btn"
+        class="text-foreground/40 hover:text-foreground text-xl leading-none"
+        aria-label="Close"
+      >&times;</button>
+    </div>
+    <div id="admin-modal-content" class="flex-1 overflow-y-auto p-6"></div>
+  </div>
+</div>
+
+<script is:inline>
+(function () {
+  var modal = document.getElementById('admin-modal');
+  var content = document.getElementById('admin-modal-content');
+  var titleEl = document.getElementById('admin-modal-title');
+  var closeBtn = document.getElementById('admin-modal-close-btn');
+  var backdrop = document.getElementById('admin-modal-backdrop');
+  var _resolve = null;
+
+  function escHtml(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function open(title) {
+    titleEl.textContent = title;
+    modal.classList.remove('hidden');
+  }
+
+  function close() {
+    modal.classList.add('hidden');
+    content.innerHTML = '';
+    if (_resolve) { var r = _resolve; _resolve = null; r(null); }
+  }
+
+  closeBtn.addEventListener('click', close);
+  backdrop.addEventListener('click', close);
+
+  window.AdminModal = {
+    openThumbnailPicker: function (countrySlug, column, currentPhotoId) {
+      return new Promise(function (resolve) {
+        _resolve = resolve;
+        var isPublic = column === 'public';
+        open(isPublic ? 'Choose public thumbnail' : 'Choose family thumbnail');
+        content.innerHTML = '<p class="text-foreground/40 text-sm">Loading photos…</p>';
+
+        var url = '/api/admin/photos/by-country/' + encodeURIComponent(countrySlug) + (isPublic ? '?filter=public' : '');
+        fetch(url)
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            var photos = data.photos || [];
+            if (photos.length === 0) {
+              content.innerHTML = '<p class="text-foreground/40 text-sm">No photos available.</p>';
+              return;
+            }
+            var grid = document.createElement('div');
+            grid.className = 'grid grid-cols-4 gap-2';
+            photos.forEach(function (photo) {
+              var btn = document.createElement('button');
+              var isCurrent = photo.id === currentPhotoId;
+              btn.className = 'relative aspect-square overflow-hidden rounded transition-opacity hover:opacity-85' +
+                (isCurrent ? ' ring-2 ring-white ring-offset-1 ring-offset-background' : '');
+              btn.innerHTML = '<img src="/i/' + escHtml(photo.r2_key_thumb) + '" alt="" class="w-full h-full object-cover" loading="lazy" />' +
+                (isCurrent ? '<div class="absolute bottom-0 inset-x-0 bg-black/60 text-white text-xs text-center py-0.5">Current</div>' : '');
+              btn.addEventListener('click', function () {
+                var r = _resolve; _resolve = null;
+                close();
+                if (r) r({ id: photo.id, key: photo.r2_key_thumb });
+              });
+              grid.appendChild(btn);
+            });
+            content.innerHTML = '';
+            content.appendChild(grid);
+          })
+          .catch(function () {
+            content.innerHTML = '<p class="text-red-400 text-sm">Failed to load photos.</p>';
+          });
+      });
+    },
+
+    openPhotoManager: function (countrySlug, cityId, cityName) {
+      return new Promise(function (resolve) {
+        _resolve = resolve;
+        open('Photos — ' + escHtml(cityName || 'City'));
+        content.innerHTML = '<p class="text-foreground/40 text-sm">Loading photos…</p>';
+
+        var url = '/api/admin/photos/by-country/' + encodeURIComponent(countrySlug) + '?city_id=' + cityId;
+        var photos = [];
+
+        function renderGrid() {
+          if (photos.length === 0) {
+            content.innerHTML = '<p class="text-foreground/40 text-sm">No photos.</p>';
+            return;
+          }
+          var grid = document.createElement('div');
+          grid.className = 'grid grid-cols-4 gap-2';
+          photos.forEach(function (photo) {
+            var div = document.createElement('div');
+            div.className = 'relative aspect-square overflow-hidden rounded group';
+            div.innerHTML =
+              '<img src="/i/' + escHtml(photo.r2_key_thumb) + '" alt="" class="w-full h-full object-cover" loading="lazy" />' +
+              '<div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-150">' +
+              '<button class="delete-photo-btn bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded" data-pid="' + escHtml(photo.id) + '">Delete</button>' +
+              '</div>' +
+              '<div class="absolute top-1 right-1 text-xs select-none">' + (photo.is_public ? '👁' : '🔒') + '</div>';
+            grid.appendChild(div);
+          });
+          content.innerHTML = '';
+          content.appendChild(grid);
+          content.querySelectorAll('.delete-photo-btn').forEach(function (btn) {
+            btn.addEventListener('click', async function () {
+              var photoId = btn.getAttribute('data-pid');
+              if (!window.confirm('Delete this photo? This cannot be undone.')) return;
+              try {
+                var r = await fetch('/api/admin/photos/' + encodeURIComponent(photoId), { method: 'DELETE' });
+                if (r.ok || r.status === 204) {
+                  photos = photos.filter(function (p) { return p.id !== photoId; });
+                  renderGrid();
+                } else {
+                  var err = await r.json();
+                  alert(err.error || 'Failed to delete photo.');
+                }
+              } catch (e) {
+                alert('Failed to delete photo.');
+              }
+            });
+          });
+        }
+
+        fetch(url)
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            photos = data.photos || [];
+            renderGrid();
+          })
+          .catch(function () {
+            content.innerHTML = '<p class="text-red-400 text-sm">Failed to load photos.</p>';
+          });
+      });
+    },
+
+    confirm: function (message) {
+      return Promise.resolve(window.confirm(message));
+    },
+
+    close: close,
+  };
+}());
+</script>
