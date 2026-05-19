@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 19 May 2026, end of Slice 5 design session
+**Last updated**: 19 May 2026, end of Slice 5 build session
 
 | Item | State |
 |---|---|
@@ -21,10 +21,10 @@ boundaries.
 | Phase 4 Slice 2 — EXIF parsing | ✅ Done |
 | Phase 4 Slice 3 — Nominatim geocoding + auto-create | ✅ Done |
 | Phase 4 Slice 4 — Per-file review table | ✅ Done |
-| Phase 4 Slice 5 — `/admin/countries` management | ⏳ Not started — next session |
+| Phase 4 Slice 5 — `/admin/countries` management | ✅ Done — deployed, awaiting Access config + verification |
 | Phase 5 — Family section + Access | ⏳ Not started |
 | Phase 6 — Polish | ⏳ Not started |
-| Next immediate task | Start Slice 5 build — `/admin/countries` page per the design decisions in the session log below |
+| Next immediate task | 1. Add Cloudflare Access destinations for new routes (see Slice 5 session entry). 2. Run 14-step launch-state verification. 3. Update project knowledge. |
 
 ---
 
@@ -1229,6 +1229,132 @@ Claude Code brief, which will cover:
   plus `/api/admin/photos/*`)
 - Shared modal component for thumbnail-pick / photo-manage
 - Launch-state cleanup as the verification walkthrough
+
+---
+
+### Session: Phase 4 Slice 5 — /admin/countries build (May 2026)
+
+**Context**: Build session following the Slice 5 design session. All
+nine design decisions from that session implemented in a single
+Claude Code run. No code changes had been made prior to this session.
+
+**What was built**
+
+- **`migrations/0002_split_thumbnails.sql`** — Renames
+  `countries.thumbnail_photo_id` → `public_thumbnail_photo_id` via
+  `ALTER TABLE ... RENAME COLUMN`; adds `family_thumbnail_photo_id TEXT`.
+  Applied local + remote. Remote verified with `PRAGMA table_info`.
+
+- **`src/pages/api/admin/upload.ts`** — Updated auto-thumbnail logic:
+  new-country uploads set `family_thumbnail_photo_id` (regardless of
+  public/family); all public uploads set `public_thumbnail_photo_id`
+  when null. Existing-country uploads only touch `public_thumbnail_photo_id`.
+
+- **`src/pages/index.astro`** — Homepage country cards now show thumbnail
+  images (`public_thumbnail_photo_id` → LEFT JOIN photos for
+  `r2_key_thumb`). Sort order changed from `sort_order` to most-recent
+  public upload date (`ORDER BY MAX(created_at) DESC`).
+
+- **`src/pages/api/admin/cities.ts`** — Added `POST` handler for city
+  creation (existing `GET` for dropdown population unchanged).
+
+- **New API endpoints** (all auth-gated via `requireAdmin`):
+  - `GET /api/admin/countries/list` — countries with cities, photo counts,
+    and thumbnail keys; two queries in a D1 batch merged in TypeScript.
+  - `POST /api/admin/countries/[slug]` — create country; slug validated
+    against `slugify(name)`.
+  - `PATCH /api/admin/countries/[slug]` — rename (updates both name +
+    slug), set public/family thumbnail. Separate UPDATE per field to avoid
+    dynamic query building.
+  - `DELETE /api/admin/countries/[slug]` — collect R2 keys, delete from
+    R2 (swallowed on error), then D1 batch: photos → cities → country.
+  - `GET /api/admin/countries/[slug]/delete-preview` — returns city_count
+    and photo_count via a single JOIN query.
+  - `PATCH /api/admin/cities/[id]` — rename city (updates name + slug).
+    RETURNING clause gives the updated row.
+  - `DELETE /api/admin/cities/[id]` — R2 keys → R2 delete → D1 batch:
+    photos → city → clear dangling thumbnail refs via NOT IN subquery.
+  - `GET /api/admin/cities/[id]/delete-preview` — photo_count for city.
+  - `GET /api/admin/photos/by-country/[slug]` — all photos for a country,
+    supports `?filter=public` and `?city_id=N` query params.
+  - `DELETE /api/admin/photos/[id]` — batch: clear thumbnail refs +
+    delete photo row; then R2 delete (swallowed on error).
+
+- **`src/components/AdminModal.astro`** — `<script is:inline>` exposes
+  `window.AdminModal` with:
+  - `openThumbnailPicker(slug, 'public'|'family', currentId)` → Promise
+    resolving with `{ id, key }` or `null` on cancel. Shows 4-column
+    photo grid; current thumbnail highlighted with ring.
+  - `openPhotoManager(slug, cityId, cityName)` → Promise resolving when
+    modal closes. Shows grid with delete buttons; deletes fire
+    `DELETE /api/admin/photos/[id]` and remove from the in-memory array
+    + re-render without closing the modal.
+  - `confirm(message)` → wraps native `window.confirm` as a Promise.
+  - `close()` — closes modal and resolves any pending promise with null.
+
+- **`src/pages/admin/countries/index.astro`** — Auth in frontmatter,
+  static shell, all data loaded + rendered client-side via
+  `GET /api/admin/countries/list`. Features:
+  - Expandable country rows (expansion state persisted across re-renders
+    via `expandedSlugs` Set).
+  - Inline rename with live slug preview (event delegation on container).
+  - Delete country: preview count → `window.confirm` → DELETE API →
+    re-render.
+  - Change public/family thumbnail via `AdminModal.openThumbnailPicker`
+    → PATCH.
+  - Add country form: name → auto-slug → POST → hide form → re-render.
+  - City rows inside expanded section: rename (inline edit replaces row),
+    delete (preview → confirm → DELETE), manage photos (modal), add city.
+  - Event delegation throughout; `loadAndRender()` called after every
+    mutation for simplicity.
+
+- **`.gitignore`** — Changed `photos/` → `/photos/` (root-only) so
+  `src/pages/api/admin/photos/` source files aren't excluded.
+
+**Decisions made**
+
+- **Separate UPDATE statements per field in PATCH**: avoids dynamic SQL
+  string building which is error-prone with `?N` positional params.
+  Acceptable overhead for personal admin tool with < 10 countries.
+- **`is:inline` for AdminModal script**: avoids TypeScript checking on
+  `window.AdminModal` assignment; injected at parse time in correct order
+  before the admin page script.
+- **Native `window.confirm` for delete confirmation**: simpler than a
+  custom modal confirm; shows exact photo/city counts in the message.
+- **Full re-render after each mutation**: safe given < 10 countries;
+  expansion state restored from `expandedSlugs` Set. Avoids per-node
+  update complexity.
+- **`NOT IN (SELECT id FROM photos)` thumbnail cleanup on city delete**:
+  cleaner than per-photo clearing; runs after the photo DELETE in the
+  same D1 batch which sees the deletions.
+- **`/api/admin/photos/` directory collision with `.gitignore`**: the
+  existing `photos/` rule in `.gitignore` was intended for root-level
+  test photo files. Tightened to `/photos/` (root-anchored) to allow
+  API source files.
+
+**Commit**: `feat: phase 4 slice 5 — /admin/countries management page`
+(commit `1cbed73`). Pushed; GitHub Actions deploy in progress.
+
+**Left unfinished / next steps**
+
+- **Cloudflare Access destinations**: Add `/admin/countries` and
+  `/api/admin/countries/*`, `/api/admin/cities/*`, `/api/admin/photos/*`
+  as additional destinations on the Footsteps Admin Access app
+  (Zero Trust → Access → Applications → Footsteps Admin → Edit).
+  Without this, the new routes won't see the `Cf-Access-Authenticated-
+  User-Email` header and will 403.
+- **Launch-state verification** (14 steps from the design session):
+  delete Italy, delete Spain, delete London test photo, rename
+  greater-london → london / London, add Chelmsford + York (UK),
+  add Greece (no cities), add Australia with Sydney + Marrickville.
+  Each step validates a code path end-to-end.
+- **Update project knowledge** in claude.ai after verification.
+- **`docs/footsteps_architecture_post_phase_3.svg`** — still untracked.
+- **`docs/Next Claude prompt - footsteps.txt`** — stale Claude.ai
+  handoff file; safe to delete or gitignore.
+- **Revoke `footsteps-upload-script` API token** — still pending.
+- **Node 20 deprecation on action wrappers** — bump to `@v5` when stable.
+- **JWT signature validation** in `admin-auth.ts` — Phase 6 item.
 
 ---
 
