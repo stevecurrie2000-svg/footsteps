@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 19 May 2026, end of Phase 4 Slice 4 session
+**Last updated**: 19 May 2026, end of Slice 5 design session
 
 | Item | State |
 |---|---|
@@ -24,7 +24,7 @@ boundaries.
 | Phase 4 Slice 5 — `/admin/countries` management | ⏳ Not started — next session |
 | Phase 5 — Family section + Access | ⏳ Not started |
 | Phase 6 — Polish | ⏳ Not started |
-| Next immediate task | Start Slice 5 — `/admin/countries` retrospective management page (rename, thumbnail, delete orphans) |
+| Next immediate task | Start Slice 5 build — `/admin/countries` page per the design decisions in the session log below |
 
 ---
 
@@ -1110,6 +1110,125 @@ Upload loop:
   URL lives as long as the row; resize URL lives only for the duration
   of `resizeImage`. Getting these wrong causes either broken images
   (too-short) or memory leaks (too-long).
+
+---
+
+### Session: Slice 5 design (May 2026)
+
+**Context**: Planning session in claude.ai. No code changes. Nine design
+decisions landed for the Slice 5 build, plus the launch-state cleanup
+target. Build session itself happens next.
+
+**Scope of Slice 5**
+
+`/admin/countries` retrospective management page. Handles countries,
+cities, thumbnail selection, and per-photo deletion. Auth-gated by
+extending the existing Cloudflare Access app (add `/admin/countries`
+and `/api/admin/countries/*` as additional destinations on the
+Footsteps Admin app).
+
+Per-photo management beyond delete (rename, caption edit, move-between-
+cities) remains out of scope and deferred to a later slice when a real
+use case emerges.
+
+**Design decisions**
+
+1. **Page structure: single page, expandable rows**. Countries in a
+   list, click to expand and reveal that country's cities inline. No
+   drill-into sub-pages. Same one-page-table pattern as Slice 4.
+2. **Sort orders split**: `/admin/countries` is alphabetical (predictable
+   for management); the public homepage country grid switches to "most
+   recent public upload first" (`ORDER BY (SELECT MAX(uploaded_at) FROM
+   photos WHERE photos.country_id = countries.id AND photos.is_public
+   = 1) DESC`). Existing `WHERE EXISTS` filter from Slice 3 retained.
+3. **Cascade-delete with photo + city count**: deleting a country or
+   city with photos cascades, but the confirm dialog must show the
+   exact count of photos (and cities for a country delete) that will be
+   removed. Count is computed server-side at click time, not
+   pre-loaded, to avoid stale counts.
+4. **Thumbnail picker is a modal**: click "Change public thumbnail" or
+   "Change family thumbnail" → modal opens with that country's photos
+   in a grid; current thumbnail highlighted; click to set. Public
+   picker filters to public photos only; family picker shows all
+   photos. The modal component is shared between thumbnail picking and
+   per-photo management (delete) to avoid near-duplicate UIs.
+5. **Two-thumbnail schema**: a new migration renames
+   `countries.thumbnail_photo_id` → `public_thumbnail_photo_id` and
+   adds `family_thumbnail_photo_id TEXT NULL` with a FK to `photos.id`.
+   `upload.ts`'s Slice 3 auto-thumbnail logic extends accordingly: the
+   first photo of a new country sets `family_thumbnail_photo_id`
+   unconditionally; if that photo is also public, it also sets
+   `public_thumbnail_photo_id`.
+6. **Per-photo delete UI**: each city row (inside the expanded country
+   view) shows a photo count + "Manage photos" affordance opening the
+   shared modal in delete mode. Per-photo delete removes D1 row and all
+   four R2 objects (`-thumb`, `-medium`, `-full`, `-original`); if the
+   deleted photo was either country thumbnail, that column is set to
+   NULL.
+7. **Launch-state cleanup happens via the UI itself**. The Slice 5
+   build session ends by using the page to set Footsteps' first
+   launch-state: delete Italy and Spain (empty seed countries); delete
+   the London test photo (UUID `56aad643-…`); rename `greater-london`
+   back to `london` / "London" (slug + name); add Chelmsford and York
+   as UK cities; add Greece (no cities); add Australia with Sydney and
+   Marrickville. Each operation also serves as end-to-end verification
+   of its corresponding code path.
+8. **Captions**: still out of scope. D1 column already retained from
+   Slice 4 — no migration needed if/when captions return.
+9. **London canonical-naming reversed**: Slice 4 renamed London →
+   Greater London in D1 to match Nominatim's natural output.
+   Slice 5 reverses this: D1 goes back to `london` / "London" for
+   display quality on photo grids. Trade-off accepted: Nominatim auto-
+   detection on London uploads will now produce "Greater London (new)"
+   in the review table dropdowns, requiring a manual override per
+   batch. After a few months of real uploads, if the override is
+   constant pain, the previously-deferred alias table (option (b) from
+   the original Slice 3 deferral) becomes the obvious next step.
+
+**Launch-state target after Slice 5**
+
+- Australia (Sydney, Marrickville)
+- France (no cities)
+- Greece (no cities)
+- United Kingdom (London, Chelmsford, York)
+- No photos
+- Public homepage empty (no public photos → `WHERE EXISTS` hides
+  everything)
+- First real Canon R7 upload becomes the first photo visible to the
+  public
+
+**What was NOT decided** (deliberately deferred)
+
+- **City reorder** within a country: not in Slice 5. Cities currently
+  appear in `slug ASC` order via the existing query; staying with that
+  for now.
+- **Per-photo move-between-cities**: not in Slice 5. If it becomes
+  needed, future slice.
+- **Per-photo caption edit**: not in Slice 5. Captions remain out of
+  the whole pipeline for now.
+- **Thumbnail auto-fallback** if the chosen thumbnail photo is deleted:
+  set to NULL on delete, no auto-promotion to the "next" photo. The
+  country can be re-thumbnailled manually or wait for the next upload.
+
+**No code changes this session.** Next session starts with the Slice 5
+Claude Code brief, which will cover:
+
+- Migration `0002`: rename + add column for two-thumbnail schema
+- `upload.ts` Slice 3 auto-thumbnail logic extended for the new column
+- New page `src/pages/admin/countries/index.astro`
+- New API endpoints:
+  - `GET /api/admin/countries/list` — countries + cities + counts
+  - `POST/PATCH /api/admin/countries/[slug]` — rename, change thumbnails
+  - `DELETE /api/admin/countries/[slug]` — cascade with confirm-count
+    endpoint
+  - Similar trio for cities
+  - `GET /api/admin/photos/by-country/[slug]` — modal data source
+  - `DELETE /api/admin/photos/[id]` — per-photo delete with R2 cleanup
+- Cloudflare Access: extend the Footsteps Admin app with two new
+  destinations (`/admin/countries` and `/api/admin/countries/*`,
+  plus `/api/admin/photos/*`)
+- Shared modal component for thumbnail-pick / photo-manage
+- Launch-state cleanup as the verification walkthrough
 
 ---
 
