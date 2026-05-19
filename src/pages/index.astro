@@ -3,7 +3,14 @@ import { env } from "cloudflare:workers";
 import BaseLayout from "../layouts/BaseLayout.astro";
 
 const { results: countries } = await env.DB
-  .prepare("SELECT id, slug, name FROM countries ORDER BY sort_order")
+  .prepare(
+    `SELECT id, slug, name FROM countries
+     WHERE EXISTS (
+       SELECT 1 FROM photos
+       WHERE photos.country_id = countries.id AND photos.is_public = 1
+     )
+     ORDER BY sort_order`
+  )
   .all<{ id: number; slug: string; name: string }>();
 ---
 

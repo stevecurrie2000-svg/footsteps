@@ -3,6 +3,7 @@ export const prerender = false;
 import type { APIRoute } from "astro";
 import { env } from "cloudflare:workers";
 import { requireAdmin } from "../../../lib/admin-auth";
+import { slugify } from "../../../lib/nominatim";
 
 export const POST: APIRoute = async ({ request }) => {
   const auth = requireAdmin(request);
@@ -47,6 +48,9 @@ export const POST: APIRoute = async ({ request }) => {
     ? originalFilenameRaw.slice(0, 255)
     : null;
 
+  const geocodedCountry = ((form.get("geocoded_country") as string | null) ?? "").trim().slice(0, 100);
+  const geocodedCity    = ((form.get("geocoded_city")    as string | null) ?? "").trim().slice(0, 100);
+
   const thumb    = form.get("thumb")    as File | null;
   const medium   = form.get("medium")   as File | null;
   const full     = form.get("full")     as File | null;
@@ -78,20 +82,116 @@ export const POST: APIRoute = async ({ request }) => {
     });
   }
 
-  const row = await env.DB.prepare(
-    `SELECT co.id AS country_id, ci.id AS city_id
-     FROM countries co
-     JOIN cities ci ON ci.country_id = co.id
-     WHERE co.slug = ?1 AND ci.slug = ?2`
-  ).bind(country, city).first<{ country_id: number; city_id: number }>();
+  const isNewCountry = country.startsWith("__new__:");
+  const isNewCity    = city.startsWith("__new__:");
+  const countrySlug  = isNewCountry ? country.slice("__new__:".length) : country;
+  const citySlug     = isNewCity    ? city.slice("__new__:".length)    : city;
 
-  if (!row) {
-    return new Response(JSON.stringify({ error: "Unknown country/city combination" }), {
+  if (!countrySlug || !citySlug) {
+    return new Response(JSON.stringify({ error: "Invalid country or city identifier" }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
     });
   }
 
+  if (isNewCountry) {
+    if (!geocodedCountry) {
+      return new Response(JSON.stringify({ error: "New country requires geocoded_country" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (slugify(geocodedCountry) !== countrySlug) {
+      return new Response(JSON.stringify({ error: "Country slug mismatch" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
+
+  if (isNewCity) {
+    if (!geocodedCity) {
+      return new Response(JSON.stringify({ error: "New city requires geocoded_city" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (slugify(geocodedCity) !== citySlug) {
+      return new Response(JSON.stringify({ error: "City slug mismatch" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
+
+  // ── Resolve country_id ────────────────────────────────────────────────────
+  let countryId: number;
+  if (isNewCountry) {
+    const inserted = await env.DB.prepare(
+      `INSERT INTO countries (slug, name) VALUES (?1, ?2) ON CONFLICT(slug) DO NOTHING RETURNING id`
+    ).bind(countrySlug, geocodedCountry).first<{ id: number }>();
+    if (inserted) {
+      countryId = inserted.id;
+    } else {
+      const existing = await env.DB.prepare(
+        `SELECT id FROM countries WHERE slug = ?1`
+      ).bind(countrySlug).first<{ id: number }>();
+      if (!existing) {
+        return new Response(JSON.stringify({ error: "Country lookup failed" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      countryId = existing.id;
+    }
+  } else {
+    const existing = await env.DB.prepare(
+      `SELECT id FROM countries WHERE slug = ?1`
+    ).bind(countrySlug).first<{ id: number }>();
+    if (!existing) {
+      return new Response(JSON.stringify({ error: "Unknown country" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    countryId = existing.id;
+  }
+
+  // ── Resolve city_id ───────────────────────────────────────────────────────
+  let cityId: number;
+  if (isNewCity) {
+    const inserted = await env.DB.prepare(
+      `INSERT INTO cities (country_id, slug, name) VALUES (?1, ?2, ?3) ON CONFLICT(country_id, slug) DO NOTHING RETURNING id`
+    ).bind(countryId, citySlug, geocodedCity).first<{ id: number }>();
+    if (inserted) {
+      cityId = inserted.id;
+    } else {
+      const existing = await env.DB.prepare(
+        `SELECT id FROM cities WHERE country_id = ?1 AND slug = ?2`
+      ).bind(countryId, citySlug).first<{ id: number }>();
+      if (!existing) {
+        return new Response(JSON.stringify({ error: "City lookup failed" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      cityId = existing.id;
+    }
+  } else {
+    const existing = await env.DB.prepare(
+      `SELECT id FROM cities WHERE country_id = ?1 AND slug = ?2`
+    ).bind(countryId, citySlug).first<{ id: number }>();
+    if (!existing) {
+      return new Response(JSON.stringify({ error: "Unknown city" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    cityId = existing.id;
+  }
+
+  // Note: if photo insert fails after country/city create,
+  // orphan rows remain. Slice 5's admin country page will handle cleanup.
   const id          = crypto.randomUUID();
   const thumbKey    = `${id}-thumb.jpg`;
   const mediumKey   = `${id}-medium.jpg`;
@@ -114,27 +214,36 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   try {
-    await env.DB.prepare(
-      `INSERT INTO photos
-         (id, city_id, country_id, is_public, caption,
-          capture_date, latitude, longitude, original_filename,
-          r2_key_thumb, r2_key_medium, r2_key_full, r2_key_original)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`
-    ).bind(
-      id,
-      row.city_id,
-      row.country_id,
-      isPublic ? 1 : 0,
-      caption,
-      captureDate,
-      latitude,
-      longitude,
-      originalFilename,
-      thumbKey,
-      mediumKey,
-      fullKey,
-      originalKey,
-    ).run();
+    const batchStmts = [
+      env.DB.prepare(
+        `INSERT INTO photos
+           (id, city_id, country_id, is_public, caption,
+            capture_date, latitude, longitude, original_filename,
+            r2_key_thumb, r2_key_medium, r2_key_full, r2_key_original)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`
+      ).bind(
+        id,
+        cityId,
+        countryId,
+        isPublic ? 1 : 0,
+        caption,
+        captureDate,
+        latitude,
+        longitude,
+        originalFilename,
+        thumbKey,
+        mediumKey,
+        fullKey,
+        originalKey,
+      ),
+      // Set thumbnail on the country if none is set yet — only for public photos
+      ...(isPublic ? [
+        env.DB.prepare(
+          `UPDATE countries SET thumbnail_photo_id = ?1 WHERE id = ?2 AND thumbnail_photo_id IS NULL`
+        ).bind(id, countryId),
+      ] : []),
+    ];
+    await env.DB.batch(batchStmts);
   } catch (err) {
     console.error("D1 insert error:", err);
     return new Response(JSON.stringify({ error: "Upload failed" }), {

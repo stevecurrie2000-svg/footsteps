@@ -119,6 +119,7 @@ const { email } = auth;
 
 <script>
   import exifr from "exifr";
+  import { reverseGeocode, slugify, type GeocodedLocation } from "../../lib/nominatim";
 
   // ── Types ─────────────────────────────────────────────────────────────────
   interface ExifResult {
@@ -130,6 +131,7 @@ const { email } = auth;
   interface FileEntry {
     file: File;
     exif: ExifResult | null;
+    geocoded: GeocodedLocation | null;
   }
 
   // ── State ─────────────────────────────────────────────────────────────────
@@ -180,6 +182,7 @@ const { email } = auth;
   // ── File handling ─────────────────────────────────────────────────────────
   async function addFiles(filesList: FileList | null) {
     if (!filesList) return;
+    let firstGeocode = true;
     for (const file of filesList) {
       if (!["image/jpeg", "image/png"].includes(file.type)) continue;
       const exifRaw = await exifr.parse(file, {
@@ -187,7 +190,21 @@ const { email } = auth;
                "GPSLatitudeRef", "GPSLongitudeRef"],
         gps: true,
       }).catch(() => null) as ExifResult | null;
-      const entry: FileEntry = { file, exif: exifRaw ?? null };
+      const exif = exifRaw ?? null;
+
+      let geocoded: GeocodedLocation | null = null;
+      if (exif?.latitude != null && exif?.longitude != null) {
+        if (!firstGeocode) await new Promise(r => setTimeout(r, 1100));
+        firstGeocode = false;
+        try {
+          geocoded = await reverseGeocode(exif.latitude, exif.longitude);
+          applyGeocode(geocoded);
+        } catch {
+          showToast(`Couldn't auto-detect location for ${file.name} — pick manually`);
+        }
+      }
+
+      const entry: FileEntry = { file, exif, geocoded };
       files.push(entry);
       renderPreview(entry);
     }
@@ -241,6 +258,109 @@ const { email } = auth;
     previewGrid.appendChild(wrapper);
   }
 
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  function showToast(message: string) {
+    const toast = document.createElement("div");
+    toast.className =
+      "fixed bottom-4 right-4 z-50 max-w-xs px-4 py-3 rounded shadow-lg " +
+      "bg-zinc-800 border border-white/10 text-sm text-foreground " +
+      "transition-opacity duration-300";
+    toast.style.opacity = "0";
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => { toast.style.opacity = "1"; });
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+    }, 4000);
+  }
+
+  // ── Geocode helpers ───────────────────────────────────────────────────────
+  function removeNewOptions(select: HTMLSelectElement) {
+    Array.from(select.options)
+      .filter(o => o.value.startsWith("__new__:"))
+      .forEach(o => o.remove());
+  }
+
+  function applyGeocode(geo: GeocodedLocation) {
+    const countrySlug = slugify(geo.country);
+    const citySlug    = slugify(geo.city);
+
+    removeNewOptions(countrySelect);
+
+    const existingCountry = Array.from(countrySelect.options)
+      .find(o => o.value === countrySlug);
+
+    if (existingCountry) {
+      countrySelect.value = countrySlug;
+      void loadCitiesForGeocode(countrySlug, geo.city, citySlug);
+    } else {
+      const opt = document.createElement("option");
+      opt.value = `__new__:${countrySlug}`;
+      opt.textContent = `${geo.country} (new)`;
+      countrySelect.appendChild(opt);
+      countrySelect.value = `__new__:${countrySlug}`;
+
+      // New country → city also new; bypass the city API call
+      citySelect.innerHTML = "";
+      citySelect.disabled = false;
+      const cityOpt = document.createElement("option");
+      cityOpt.value = `__new__:${citySlug}`;
+      cityOpt.textContent = `${geo.city} (new)`;
+      citySelect.appendChild(cityOpt);
+      citySelect.value = `__new__:${citySlug}`;
+      updateButtonState();
+    }
+  }
+
+  async function loadCitiesForGeocode(
+    countrySlug: string,
+    cityName: string,
+    citySlug: string,
+  ) {
+    citySelect.innerHTML = "";
+    citySelect.disabled = true;
+    const loading = document.createElement("option");
+    loading.value = "";
+    loading.disabled = true;
+    loading.selected = true;
+    loading.textContent = "Loading…";
+    citySelect.appendChild(loading);
+
+    const res = await fetch(`/api/admin/cities?country=${encodeURIComponent(countrySlug)}`);
+    citySelect.innerHTML = "";
+
+    if (res.ok) {
+      const data = await res.json() as { cities: { slug: string; name: string }[] };
+      for (const c of data.cities) {
+        const opt = document.createElement("option");
+        opt.value = c.slug;
+        opt.textContent = c.name;
+        citySelect.appendChild(opt);
+      }
+      const existingCity = Array.from(citySelect.options).find(o => o.value === citySlug);
+      if (existingCity) {
+        citySelect.value = citySlug;
+      } else {
+        removeNewOptions(citySelect);
+        const cityOpt = document.createElement("option");
+        cityOpt.value = `__new__:${citySlug}`;
+        cityOpt.textContent = `${cityName} (new)`;
+        citySelect.appendChild(cityOpt);
+        citySelect.value = `__new__:${citySlug}`;
+      }
+      citySelect.disabled = false;
+    } else {
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.disabled = true;
+      placeholder.selected = true;
+      placeholder.textContent = "Choose a city…";
+      citySelect.appendChild(placeholder);
+    }
+    updateButtonState();
+  }
+
   // Remove via event delegation
   previewGrid.addEventListener("click", (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLElement>("button[data-filename]");
@@ -286,7 +406,11 @@ const { email } = auth;
 
   // ── Country / city selects ────────────────────────────────────────────────
   countrySelect.addEventListener("change", async () => {
-    // Reset city
+    // __new__: countries have their cities pre-set by applyGeocode
+    if (countrySelect.value.startsWith("__new__:")) {
+      updateButtonState();
+      return;
+    }
     citySelect.innerHTML = "";
     citySelect.disabled = true;
     const loadingOpt = document.createElement("option");
@@ -394,7 +518,7 @@ const { email } = auth;
     uploadButton.disabled = true;
 
     for (let i = 0; i < batch.length; i++) {
-      const { file, exif } = batch[i];
+      const { file, exif, geocoded } = batch[i];
       uploadButton.textContent = `Uploading ${i + 1} of ${batch.length}…`;
 
       try {
@@ -406,6 +530,9 @@ const { email } = auth;
         const lat = exif?.latitude  != null ? String(exif.latitude)  : "";
         const lon = exif?.longitude != null ? String(exif.longitude) : "";
 
+        const geocodedCountry = geocoded?.country ?? "";
+        const geocodedCity    = geocoded?.city    ?? "";
+
         const fd = new FormData();
         fd.append("country",           country);
         fd.append("city",              city);
@@ -415,6 +542,8 @@ const { email } = auth;
         fd.append("latitude",          lat);
         fd.append("longitude",         lon);
         fd.append("original_filename", file.name);
+        fd.append("geocoded_country",  geocodedCountry);
+        fd.append("geocoded_city",     geocodedCity);
         fd.append("thumb",             thumb,    `${file.name}-thumb.jpg`);
         fd.append("medium",            medium,   `${file.name}-medium.jpg`);
         fd.append("full",              full,     `${file.name}-full.jpg`);
