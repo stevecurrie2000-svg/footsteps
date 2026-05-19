@@ -53,7 +53,7 @@
       return new Promise(function (resolve) {
         _resolve = resolve;
         var isPublic = column === 'public';
-        open(isPublic ? 'Choose public thumbnail' : 'Choose family thumbnail');
+        open(isPublic ? 'Choose public thumbnail' : 'Choose private thumbnail');
         content.innerHTML = '<p class="text-foreground/40 text-sm">Loading photos…</p>';
 
         var url = '/api/admin/photos/by-country/' + encodeURIComponent(countrySlug) + (isPublic ? '?filter=public' : '');

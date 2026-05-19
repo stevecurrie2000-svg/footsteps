@@ -137,8 +137,8 @@ if (adminCheck instanceof Response) return adminCheck;
     var pubThumb = country.public_thumbnail_key
       ? '<img src="/i/' + escHtml(country.public_thumbnail_key) + '" alt="" class="w-full h-full object-cover" loading="lazy" />'
       : '<span class="text-foreground/20 text-xs">None</span>';
-    var famThumb = country.family_thumbnail_key
-      ? '<img src="/i/' + escHtml(country.family_thumbnail_key) + '" alt="" class="w-full h-full object-cover" loading="lazy" />'
+    var privThumb = country.private_thumbnail_key
+      ? '<img src="/i/' + escHtml(country.private_thumbnail_key) + '" alt="" class="w-full h-full object-cover" loading="lazy" />'
       : '<span class="text-foreground/20 text-xs">None</span>';
 
     var cities = country.cities || [];
@@ -190,10 +190,10 @@ if (adminCheck instanceof Response) return adminCheck;
           '</div>' +
         '</div>' +
         '<div class="flex flex-col gap-1">' +
-          '<span class="text-xs text-foreground/40">Family thumbnail</span>' +
+          '<span class="text-xs text-foreground/40">Private thumbnail</span>' +
           '<div class="flex items-center gap-2">' +
-            '<div class="w-12 h-12 bg-white/5 rounded overflow-hidden flex items-center justify-center flex-shrink-0">' + famThumb + '</div>' +
-            '<button data-action="set-family-thumb" class="text-xs text-foreground/60 hover:text-foreground transition-colors">Change</button>' +
+            '<div class="w-12 h-12 bg-white/5 rounded overflow-hidden flex items-center justify-center flex-shrink-0">' + privThumb + '</div>' +
+            '<button data-action="set-private-thumb" class="text-xs text-foreground/60 hover:text-foreground transition-colors">Change</button>' +
           '</div>' +
         '</div>' +
       '</div>' +
@@ -297,8 +297,8 @@ if (adminCheck instanceof Response) return adminCheck;
       return;
     }
 
-    if (action === 'set-public-thumb' || action === 'set-family-thumb') {
-      var col = action === 'set-public-thumb' ? 'public' : 'family';
+    if (action === 'set-public-thumb' || action === 'set-private-thumb') {
+      var col = action === 'set-public-thumb' ? 'public' : 'private';
       var colKey = col + '_thumbnail_photo_id';
       var c3 = getCountry(slug);
       var currentId = c3 ? c3[colKey] : null;

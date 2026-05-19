@@ -1,0 +1,77 @@
+---
+export const prerender = false;
+
+import { env } from "cloudflare:workers";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { requirePrivateViewer } from "../../lib/private-auth";
+
+const auth = requirePrivateViewer(Astro.request);
+if (auth instanceof Response) return auth;
+
+type CountryRow = {
+  id: number;
+  slug: string;
+  name: string;
+  thumbnail_key: string | null;
+};
+
+const { results: countries } = await env.DB
+  .prepare(
+    `SELECT c.id, c.slug, c.name, p.r2_key_thumb AS thumbnail_key
+     FROM countries c
+     LEFT JOIN photos p ON p.id = c.private_thumbnail_photo_id
+     WHERE EXISTS (
+       SELECT 1 FROM photos ph WHERE ph.country_id = c.id AND ph.is_public = 0
+     )
+     ORDER BY (
+       SELECT MAX(ph2.created_at) FROM photos ph2
+       WHERE ph2.country_id = c.id AND ph2.is_public = 0
+     ) DESC`
+  )
+  .all<CountryRow>();
+---
+
+<BaseLayout title="Private — Footsteps" isPrivate={true}>
+  <div class="mx-auto max-w-7xl px-6 pb-16 pt-16">
+    <h1
+      class="mb-12 text-5xl font-bold md:text-7xl"
+      style="font-family: 'Playfair Display', Georgia, serif;"
+    >
+      Private
+    </h1>
+
+    {countries.length === 0 ? (
+      <p class="text-sm uppercase tracking-widest text-[#fafafa]/30">
+        No private photographs yet.
+      </p>
+    ) : (
+      <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {countries.map((country) => (
+          <a
+            href={`/private/countries/${country.slug}`}
+            class="group block overflow-hidden rounded"
+          >
+            {country.thumbnail_key && (
+              <div class="aspect-[4/3] overflow-hidden">
+                <img
+                  src={`/i/${country.thumbnail_key}`}
+                  alt=""
+                  loading="lazy"
+                  class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                />
+              </div>
+            )}
+            <div class="py-4">
+              <h2
+                class="text-xl font-bold"
+                style="font-family: 'Playfair Display', Georgia, serif;"
+              >
+                {country.name}
+              </h2>
+            </div>
+          </a>
+        ))}
+      </div>
+    )}
+  </div>
+</BaseLayout>

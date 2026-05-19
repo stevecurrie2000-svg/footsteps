@@ -43,7 +43,7 @@ export const DELETE: APIRoute = async ({ request, params }) => {
         `UPDATE countries SET public_thumbnail_photo_id = NULL WHERE public_thumbnail_photo_id = ?`
       ).bind(id),
       env.DB.prepare(
-        `UPDATE countries SET family_thumbnail_photo_id = NULL WHERE family_thumbnail_photo_id = ?`
+        `UPDATE countries SET private_thumbnail_photo_id = NULL WHERE private_thumbnail_photo_id = ?`
       ).bind(id),
       env.DB.prepare(`DELETE FROM photos WHERE id = ?`).bind(id),
     ]);

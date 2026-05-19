@@ -461,15 +461,15 @@ const { email } = auth;
     audienceTd.className = "py-3 pr-3 align-top";
     const toggleWrap     = document.createElement("div");
     toggleWrap.className = "inline-flex rounded-full border border-white/20 overflow-hidden";
-    const btnFamily      = document.createElement("button");
-    btnFamily.type       = "button";
-    btnFamily.textContent = "Family";
-    btnFamily.className   = "px-3 py-1 text-xs font-medium bg-foreground text-background";
+    const btnPrivate      = document.createElement("button");
+    btnPrivate.type       = "button";
+    btnPrivate.textContent = "Private";
+    btnPrivate.className   = "px-3 py-1 text-xs font-medium bg-foreground text-background";
     const btnPublic       = document.createElement("button");
     btnPublic.type        = "button";
     btnPublic.textContent = "Public";
     btnPublic.className   = "px-3 py-1 text-xs font-medium text-foreground/40";
-    toggleWrap.appendChild(btnFamily);
+    toggleWrap.appendChild(btnPrivate);
     toggleWrap.appendChild(btnPublic);
     audienceTd.appendChild(toggleWrap);
 
@@ -558,11 +558,11 @@ const { email } = auth;
       updateButtonState();
     });
 
-    btnFamily.addEventListener("click", () => {
+    btnPrivate.addEventListener("click", () => {
       const s = rows.get(rowId);
       if (!s) return;
       s.isPublic          = false;
-      btnFamily.className = "px-3 py-1 text-xs font-medium bg-foreground text-background";
+      btnPrivate.className = "px-3 py-1 text-xs font-medium bg-foreground text-background";
       btnPublic.className = "px-3 py-1 text-xs font-medium text-foreground/40";
     });
 
@@ -570,7 +570,7 @@ const { email } = auth;
       const s = rows.get(rowId);
       if (!s) return;
       s.isPublic          = true;
-      btnFamily.className = "px-3 py-1 text-xs font-medium text-foreground/40";
+      btnPrivate.className = "px-3 py-1 text-xs font-medium text-foreground/40";
       btnPublic.className = "px-3 py-1 text-xs font-medium bg-foreground text-background";
     });
 

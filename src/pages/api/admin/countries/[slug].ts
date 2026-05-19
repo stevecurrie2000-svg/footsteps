@@ -82,11 +82,11 @@ export const PATCH: APIRoute = async ({ request, params }) => {
       ).bind(thumbId, country.id).run();
     }
 
-    if ("family_thumbnail_photo_id" in body) {
-      const val = body.family_thumbnail_photo_id;
+    if ("private_thumbnail_photo_id" in body) {
+      const val = body.private_thumbnail_photo_id;
       const thumbId = (val === null || val === "") ? null : String(val);
       await env.DB.prepare(
-        `UPDATE countries SET family_thumbnail_photo_id = ?1 WHERE id = ?2`
+        `UPDATE countries SET private_thumbnail_photo_id = ?1 WHERE id = ?2`
       ).bind(thumbId, country.id).run();
     }
 

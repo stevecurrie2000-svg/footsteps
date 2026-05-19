@@ -3,8 +3,9 @@ import "../styles/global.css";
 
 interface Props {
   title?: string;
+  isPrivate?: boolean;
 }
-const { title = "Footsteps" } = Astro.props;
+const { title = "Footsteps", isPrivate = false } = Astro.props;
 ---
 
 <!doctype html>
@@ -23,7 +24,7 @@ const { title = "Footsteps" } = Astro.props;
     />
   </head>
   <body class="min-h-screen flex flex-col">
-    <header class="sticky top-0 z-50 border-b border-white/10 bg-[#0a0a0a]/90 backdrop-blur-sm">
+    <header class:list={["sticky top-0 z-50 border-b border-white/10 bg-[#0a0a0a]/90 backdrop-blur-sm", { "bg-amber-950/10": isPrivate }]}>
       <nav class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         <a
           href="/"
@@ -40,10 +41,10 @@ const { title = "Footsteps" } = Astro.props;
             Portfolio
           </a>
           <a
-            href="#"
+            href="/private"
             class="text-sm text-[#fafafa]/60 transition-colors duration-200 hover:text-[#fafafa]"
           >
-            Family
+            Private
           </a>
         </div>
       </nav>

@@ -100,9 +100,9 @@ export const DELETE: APIRoute = async ({ request, params }) => {
            AND public_thumbnail_photo_id NOT IN (SELECT id FROM photos)`
       ),
       env.DB.prepare(
-        `UPDATE countries SET family_thumbnail_photo_id = NULL
-         WHERE family_thumbnail_photo_id IS NOT NULL
-           AND family_thumbnail_photo_id NOT IN (SELECT id FROM photos)`
+        `UPDATE countries SET private_thumbnail_photo_id = NULL
+         WHERE private_thumbnail_photo_id IS NOT NULL
+           AND private_thumbnail_photo_id NOT IN (SELECT id FROM photos)`
       ),
     ]);
   } catch (err) {

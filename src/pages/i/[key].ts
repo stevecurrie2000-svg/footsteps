@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import type { APIRoute } from "astro";
 
-export const GET: APIRoute = async ({ params }) => {
+export const GET: APIRoute = async ({ params, request }) => {
   const key = params.key;
   if (!key) return new Response("Not Found", { status: 404 });
 
@@ -15,8 +15,11 @@ export const GET: APIRoute = async ({ params }) => {
     .bind(key)
     .first<{ is_public: number }>();
 
-  if (!row || row.is_public === 0) {
-    return new Response("Not Found", { status: 404 });
+  if (!row) return new Response("Not Found", { status: 404 });
+
+  if (row.is_public === 0) {
+    const jwt = request.headers.get("Cf-Access-Jwt-Assertion");
+    if (!jwt) return new Response("Not Found", { status: 404 });
   }
 
   const obj = await env.PHOTOS.get(key);
