@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 19 May 2026, end of Phase 4 Slices 1 verify / 2 / 3 session
+**Last updated**: 19 May 2026, end of Phase 4 Slice 4 session
 
 | Item | State |
 |---|---|
@@ -17,14 +17,14 @@ boundaries.
 | Phase 1 — Foundations | ✅ Done |
 | Phase 2 — Country/city pages | ✅ Done |
 | Phase 3 — Storage & database | ✅ Done |
-| Phase 4 Slice 1 — Admin upload + Access | ✅ Done (verified post-BaseLayout fix) |
+| Phase 4 Slice 1 — Admin upload + Access | ✅ Done |
 | Phase 4 Slice 2 — EXIF parsing | ✅ Done |
 | Phase 4 Slice 3 — Nominatim geocoding + auto-create | ✅ Done |
-| Phase 4 Slice 4 — Bulk-edit review screen | ⏳ Not started — next session |
-| Phase 4 Slice 5 — `/admin/countries` management | ⏳ Not started |
+| Phase 4 Slice 4 — Per-file review table | ✅ Done |
+| Phase 4 Slice 5 — `/admin/countries` management | ⏳ Not started — next session |
 | Phase 5 — Family section + Access | ⏳ Not started |
 | Phase 6 — Polish | ⏳ Not started |
-| Next immediate task | Start Slice 4 — bulk-edit review screen, with the Greater London canonical-naming question to revisit using real upload data |
+| Next immediate task | Start Slice 5 — `/admin/countries` retrospective management page (rename, thumbnail, delete orphans) |
 
 ---
 
@@ -906,6 +906,210 @@ Two pre-flight blockers identified before any code was written:
   because the photo INSERT needs their IDs. Batch is therefore
   scoped to "photo insert + thumbnail update", not the full
   multi-table workflow.
+
+---
+
+### Session: Phase 4 Slice 4 — Per-file review table — May 2026
+
+**Context**: Slice 4 of Phase 4. Goal: replace the single-form
+apply-to-all upload UI with a per-file review table where each row
+has its own inline country / city / audience controls. Also landed
+the D1 London → Greater London rename deferred from Slice 3.
+
+**Pre-work: D1 rename**
+
+`cities` row `slug='london'` renamed to `slug='greater-london'`,
+`name='Greater London'` via `wrangler d1 execute --remote`. Existing
+photo row unaffected — `city_id` foreign key still points at id=1.
+This means Nominatim's natural output for central London GPS coords
+now matches the D1 row directly; no `(new)` suffix injected on
+first-time London uploads.
+
+Verified with SELECT before and after. No migration file needed —
+D1 doesn't use migration files for data changes, only schema changes.
+
+**What was built**
+
+`src/pages/admin/index.astro` — complete rewrite of the client-side UI.
+
+HTML structure:
+- Container widened from `max-w-2xl` → `max-w-5xl` to accommodate
+  the table.
+- `<form>` element removed; upload is now triggered by a button click
+  listener, not form submit.
+- Drop zone retained; transitions from full (`py-16`, "Drop photos
+  here...") to compact (`py-8`, "Add more photos") when rows exist.
+- `#review-section` hidden initially; shown when first row is added.
+  Contains a six-column `<table>` and the upload button.
+
+State model:
+- `rows: Map<string, RowState>` — keyed by UUID rowId generated
+  client-side at add time.
+- `rowElements: Map<string, HTMLTableRowElement>` — parallel map for
+  DOM access without `getElementById` across the full table.
+- `allCountries` array populated once at page load; awaited via
+  `countriesReady` Promise in `addFiles` to prevent a race on fast
+  file selection.
+- `uploadInFlight` boolean gates the upload button during a batch.
+
+Six table columns per row:
+1. Thumbnail (64×64, object-cover, rounded) with `×` remove button
+   overlay.
+2. Metadata stack: filename, capture date, GPS status — all via DOM
+   text nodes, no `innerHTML` with unescaped user data.
+3. Country `<select>` — pre-populated from `allCountries` cache;
+   `__new__:` option injected by geocode if not in D1.
+4. City `<select>` — loads from `/api/admin/cities?country=<slug>`
+   on country change; same `__new__:` injection pattern.
+5. Audience pill toggle (Family default / Public) — purely visual,
+   updates `state.isPublic`.
+6. Status cell — idle (blank), uploading (⏳), success (✓ green),
+   failed (✗ red + error message). Error message text passed through
+   `escapeHtml` before `innerHTML` assignment.
+
+Nominatim queue:
+- Single `geocodeQueue: (() => Promise<void>)[]` array drained by
+  `drainGeocodeQueue`. One task runs at a time, 1100ms gap between
+  calls. Works correctly for both initial file selection and "add
+  more" events because all geocode requests go through the same
+  queue regardless of when files were added.
+- `enqueueGeocode(rowId)` snapshots `gpsLat`/`gpsLon`/`filename`
+  from state at enqueue time; checks `rows.has(rowId)` inside the
+  task to no-op silently if the row was removed before the geocode
+  ran.
+
+Validation:
+- `updateRowValidation(rowId)`: adds `bg-red-500/5` to the `<tr>`
+  and swaps `border-white/20` → `border-red-500/40` on offending
+  selects when `countrySlug` or `citySlug` is null. Clears both
+  when valid. Uses `classList.replace` which is a no-op when the
+  source class isn't present — safe to call repeatedly.
+- `updateButtonState`: disables the upload button while any row has
+  null country/city or status `'uploading'`, or while
+  `uploadInFlight` is true.
+
+Upload loop:
+- Sequential `for` loop over a snapshot of idle valid row IDs
+  (taken at click time; rows added mid-upload are not included in
+  the current batch).
+- Per-file: `setRowStatus('uploading')` → `resizeImage` → build
+  `FormData` from row state → `POST /api/admin/upload`.
+- On 201: `setRowStatus('success')`, set `tr.style.opacity = '0'`
+  + `transition: 'opacity 300ms'` inline, then `setTimeout(300)`
+  to call `removeRow`.
+- On non-201: parse error body, `setRowStatus('failed', msg)`, row
+  stays in table for manual retry or removal.
+- Summary toast after the loop: "✓ N uploaded, ✗ N failed — fix
+  and retry" (or just the succeeded/failed half if all one outcome).
+
+`removeRow(rowId)`:
+- Revokes the thumbnail object URL.
+- Removes `<tr>` from DOM and both Maps.
+- When `rows.size === 0` after deletion: hides `#review-section`,
+  restores drop zone to full height and label, clears `fileInput.value`
+  so the same file can be re-selected.
+
+`src/pages/api/admin/upload.ts` — three-line change:
+- Removed `captionRaw` / `caption` parsing from FormData.
+- Removed `caption` column from INSERT and matching bind parameter;
+  VALUES renumbered from `?1…?13` → `?1…?12`.
+- Removed `caption` from the 201 response JSON.
+- `caption` column remains in D1 schema — no migration.
+
+**Decisions made**
+
+- **`__new__:` country → city restore**: when the user manually
+  switches the country dropdown back to a `__new__:` option after
+  having changed away, the handler restores the geocoded `__new__:`
+  city from `state.geocodedCitySlug` / `geocodedCityName`. Avoids
+  leaving a stale city list from the previously-selected existing
+  country.
+- **Sequential upload loop**: chosen over `Promise.all`. Easier to
+  reason about per-row status transitions; avoids potentially
+  hammering R2 with parallel PUTs; weekly batch sizes make
+  parallelism unnecessary.
+- **Thumbnail object URL lifetime**: created in `addRow`, stored in
+  `state.thumbnailDataUrl`, revoked in `removeRow`. A second object
+  URL is created inside `resizeImage` from the same `File` and
+  revoked immediately after resize — two separate URLs for two
+  separate purposes, both managed.
+- **No resize URL revoke in `addRow`**: the thumbnail URL must stay
+  alive for the life of the row (the `<img>` src points to it).
+  Only revoked on row removal.
+- **`escapeHtml` for error messages**: server error strings are set
+  via `innerHTML` in `setRowStatus`; `escapeHtml` guards against any
+  injection from a malformed server response.
+- **`countriesReady` Promise**: `loadCountries()` fires at module
+  load; `addFiles` awaits the returned Promise before processing
+  files. Eliminates the race where files are added before the
+  countries API call resolves.
+- **Caption dropped from pipeline**: the caption `<input>` and
+  FormData field are gone. The D1 column is retained; captions are
+  a later-phase concern (photo editing, Slice 5 or Phase 6).
+- **Container width**: `max-w-5xl` chosen to give the six-column
+  table breathing room. The old `max-w-2xl` is retained for the
+  public-facing pages.
+
+**Verified working**
+
+- ✅ `/admin` loads, dark theme, file picker works (checklist item 1)
+- ✅ Photo with GPS → row appears with thumbnail, filename, date,
+  GPS marker, auto-filled country + city (item 2)
+- ✅ Photo without GPS → empty dropdowns, red outlines, button
+  disabled (item 3)
+- ✅ Manual country + city pick clears red outline, enables button
+  (item 4)
+- ✅ 3-photo batch → 3 rows, Nominatim throttle visible ~1.1s apart
+  (item 5)
+- ✅ Upload batch → idle → uploading → success → fade out (item 6)
+- ✅ Photos land in D1 confirmed via wrangler query (item 7)
+- ✅ Public upload appears on `/countries/united-kingdom` (item 8)
+- ✅ Greater London auto-fills without `(new)` suffix post-rename
+  (item 10)
+- ✅ GitHub Actions deploy green (item 11)
+- ✅ Fresh-incognito `/admin` post-deploy renders correctly (item 12)
+
+**Left unfinished** (carried to next session)
+
+- **Slice 5 — `/admin/countries` page**. Retrospective management:
+  rename country/city display names, change thumbnail, delete orphan
+  rows created by failed uploads.
+- **Orphan rows** from upload failures after country/city create but
+  before photo insert. Documented in `upload.ts`; Slice 5 cleans up.
+- **Revoke `footsteps-upload-script` API token** — still pending.
+- **`infrastructure.md`** — still not created.
+- **`docs/footsteps_architecture_post_phase_3.svg`** — still
+  untracked.
+- **Node 20 deprecation on action wrappers** — bump to `@v5` when
+  stable.
+- **JWT signature validation** in `admin-auth.ts` — Phase 6 item.
+- **Item 9 from checklist** (deliberate server-error path) — not
+  formally tested. Failed-row behaviour was confirmed incidentally
+  during upload testing but not via a forced bad-slug injection.
+
+**Lessons learned this session**
+
+- **Per-row state in a `Map` keyed by UUID is the right model for
+  dynamic list UIs** in vanilla JS / Astro inline scripts. Direct
+  DOM access via `rowElements.get(rowId)` avoids repeated
+  `getElementById` calls and keeps state and DOM in sync without a
+  framework.
+- **`classList.replace(a, b)` is a safe no-op when `a` isn't
+  present** — returns `false` silently. Preferred over
+  `classList.remove(a); classList.add(b)` for toggle-style class
+  swaps because it can't accidentally add `b` when `a` wasn't there.
+- **Await the data-load Promise in the handler, not at module load.**
+  `const ready = loadCountries()` fires immediately; `await ready`
+  in `addFiles` ensures the data is there before it's needed, without
+  blocking page initialisation.
+- **Snapshot the row IDs at upload-click time.** Rows added while a
+  batch is in flight shouldn't be included in the current pass.
+  `[...rows.entries()].filter(...).map(([id]) => id)` captures the
+  state at the moment the button is clicked.
+- **Object URL lifetime must match the consumer's lifetime.** Thumbnail
+  URL lives as long as the row; resize URL lives only for the duration
+  of `resizeImage`. Getting these wrong causes either broken images
+  (too-short) or memory leaks (too-long).
 
 ---
 
