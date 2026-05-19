@@ -123,16 +123,35 @@ Will include:
 
 ---
 
-## Phase 5: Family Section + Access ⏳
+## Phase 5: Private Section + Access ⏳
 
-*Planned, not yet started.*
+*Planned, not yet started. Design updated 19 May 2026.*
 
 Will include:
-- Cloudflare Access setup with shared password
-- `/family` section mirroring public structure
+- Rename "family" → "private" throughout codebase, schema, and UI:
+  - D1 column `countries.family_thumbnail_photo_id` → `private_thumbnail_photo_id`
+    (migration 0003 via table-swap dance)
+  - UI copy: "Family / Public" toggle → "Private / Public"
+  - URL prefix `/family/*` → `/private/*`
+  - Admin references throughout
+- Cloudflare Access setup with **Google SSO + per-person email allowlist**
+  (not shared password — gives named access log and per-person revocation)
+- `/private` section mirroring public structure: country grid →
+  country page with city sections → photo grids
 - Routing logic to keep private photos out of public listings
-- Image-serving route extended to honour Access claims for private
-  photos (currently returns 404 for `is_public = 0`)
+  (already in place via `is_public` filter; just extended for new routes)
+- Image-serving route `/i/[key]` extended to honour Access claims for
+  private photos (currently returns 404 for `is_public = 0`)
+- Uses `private_thumbnail_photo_id` (set automatically by Slice 5's
+  upload logic on first photo of a new country)
+
+Open questions for Phase 5 design session:
+- Visual marker on `/private` so viewers know which side they're on?
+- Cross-linking: nav link from public to private, or hide entrance?
+- Photo overlap: strictly public-OR-private (current `is_public`
+  boolean implies this), or some photos visible to both audiences?
+- Sort order on `/private`: same as public ("most recent first"),
+  or different?
 
 ---
 
