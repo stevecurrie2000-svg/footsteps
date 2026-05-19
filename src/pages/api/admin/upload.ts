@@ -16,6 +16,37 @@ export const POST: APIRoute = async ({ request }) => {
   const captionRaw   = ((form.get("caption")  as string | null) ?? "").trim();
   const caption      = captionRaw.length > 0 ? captionRaw : null;
 
+  const captureDateRaw     = ((form.get("capture_date")      as string | null) ?? "").trim();
+  const latitudeRaw        = ((form.get("latitude")          as string | null) ?? "").trim();
+  const longitudeRaw       = ((form.get("longitude")         as string | null) ?? "").trim();
+  const originalFilenameRaw = ((form.get("original_filename") as string | null) ?? "").trim();
+
+  let captureDate: string | null = null;
+  if (captureDateRaw) {
+    const d = new Date(captureDateRaw);
+    if (isNaN(d.getTime())) {
+      console.warn("Invalid capture_date:", captureDateRaw);
+    } else {
+      captureDate = captureDateRaw;
+    }
+  }
+
+  let latitude: number | null = null;
+  if (latitudeRaw) {
+    const n = parseFloat(latitudeRaw);
+    if (isFinite(n) && n >= -90 && n <= 90) latitude = n;
+  }
+
+  let longitude: number | null = null;
+  if (longitudeRaw) {
+    const n = parseFloat(longitudeRaw);
+    if (isFinite(n) && n >= -180 && n <= 180) longitude = n;
+  }
+
+  const originalFilename = originalFilenameRaw.length > 0
+    ? originalFilenameRaw.slice(0, 255)
+    : null;
+
   const thumb    = form.get("thumb")    as File | null;
   const medium   = form.get("medium")   as File | null;
   const full     = form.get("full")     as File | null;
@@ -86,14 +117,19 @@ export const POST: APIRoute = async ({ request }) => {
     await env.DB.prepare(
       `INSERT INTO photos
          (id, city_id, country_id, is_public, caption,
+          capture_date, latitude, longitude, original_filename,
           r2_key_thumb, r2_key_medium, r2_key_full, r2_key_original)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`
     ).bind(
       id,
       row.city_id,
       row.country_id,
       isPublic ? 1 : 0,
       caption,
+      captureDate,
+      latitude,
+      longitude,
+      originalFilename,
       thumbKey,
       mediumKey,
       fullKey,

@@ -118,8 +118,22 @@ const { email } = auth;
 </BaseLayout>
 
 <script>
+  import exifr from "exifr";
+
+  // ── Types ─────────────────────────────────────────────────────────────────
+  interface ExifResult {
+    latitude?: number;
+    longitude?: number;
+    DateTimeOriginal?: Date;
+  }
+
+  interface FileEntry {
+    file: File;
+    exif: ExifResult | null;
+  }
+
   // ── State ─────────────────────────────────────────────────────────────────
-  let files: File[] = [];
+  let files: FileEntry[] = [];
   let isPublic = false;
 
   // ── Element refs ──────────────────────────────────────────────────────────
@@ -164,23 +178,33 @@ const { email } = auth;
   }
 
   // ── File handling ─────────────────────────────────────────────────────────
-  function addFiles(filesList: FileList | null) {
+  async function addFiles(filesList: FileList | null) {
     if (!filesList) return;
     for (const file of filesList) {
       if (!["image/jpeg", "image/png"].includes(file.type)) continue;
-      files.push(file);
-      renderPreview(file);
+      const exifRaw = await exifr.parse(file, {
+        pick: ["DateTimeOriginal", "GPSLatitude", "GPSLongitude",
+               "GPSLatitudeRef", "GPSLongitudeRef"],
+        gps: true,
+      }).catch(() => null) as ExifResult | null;
+      const entry: FileEntry = { file, exif: exifRaw ?? null };
+      files.push(entry);
+      renderPreview(entry);
     }
     previewGrid.classList.toggle("hidden", files.length === 0);
     updateButtonState();
   }
 
-  function renderPreview(file: File) {
+  function renderPreview(entry: FileEntry) {
+    const { file, exif } = entry;
     const url = URL.createObjectURL(file);
 
     const wrapper = document.createElement("div");
-    wrapper.className = "relative w-28 h-28 rounded overflow-hidden flex-shrink-0";
+    wrapper.className = "flex-shrink-0";
     wrapper.dataset.filename = file.name;
+
+    const imgWrap = document.createElement("div");
+    imgWrap.className = "relative w-28 h-28 rounded overflow-hidden";
 
     const img = document.createElement("img");
     img.src = url;
@@ -196,8 +220,24 @@ const { email } = auth;
       "absolute top-1 right-1 w-5 h-5 flex items-center justify-center " +
       "rounded-full bg-black/70 text-white text-xs leading-none";
 
-    wrapper.appendChild(img);
-    wrapper.appendChild(removeBtn);
+    imgWrap.appendChild(img);
+    imgWrap.appendChild(removeBtn);
+
+    const dateStr = exif?.DateTimeOriginal
+      ? exif.DateTimeOriginal.toLocaleDateString("en-GB", {
+          day: "2-digit", month: "short", year: "numeric",
+        })
+      : "No date";
+    const gpsStr = (exif?.latitude != null && exif?.longitude != null)
+      ? "📍 GPS"
+      : "📍 No GPS";
+
+    const label = document.createElement("p");
+    label.className = "text-xs text-foreground/60 mt-1 leading-tight";
+    label.textContent = `📅 ${dateStr} · ${gpsStr}`;
+
+    wrapper.appendChild(imgWrap);
+    wrapper.appendChild(label);
     previewGrid.appendChild(wrapper);
   }
 
@@ -206,7 +246,7 @@ const { email } = auth;
     const btn = (e.target as HTMLElement).closest<HTMLElement>("button[data-filename]");
     if (!btn) return;
     const filename = btn.dataset.filename!;
-    files = files.filter((f) => f.name !== filename);
+    files = files.filter((entry) => entry.file.name !== filename);
     const wrapper = previewGrid.querySelector<HTMLElement>(
       `div[data-filename="${CSS.escape(filename)}"]`
     );
@@ -354,21 +394,31 @@ const { email } = auth;
     uploadButton.disabled = true;
 
     for (let i = 0; i < batch.length; i++) {
-      const file = batch[i];
+      const { file, exif } = batch[i];
       uploadButton.textContent = `Uploading ${i + 1} of ${batch.length}…`;
 
       try {
         const { thumb, medium, full, original } = await resizeImage(file);
 
+        const captureDate = exif?.DateTimeOriginal
+          ? exif.DateTimeOriginal.toISOString()
+          : "";
+        const lat = exif?.latitude  != null ? String(exif.latitude)  : "";
+        const lon = exif?.longitude != null ? String(exif.longitude) : "";
+
         const fd = new FormData();
-        fd.append("country",    country);
-        fd.append("city",       city);
-        fd.append("is_public",  isPublicVal);
-        fd.append("caption",    caption);
-        fd.append("thumb",      thumb,    `${file.name}-thumb.jpg`);
-        fd.append("medium",     medium,   `${file.name}-medium.jpg`);
-        fd.append("full",       full,     `${file.name}-full.jpg`);
-        fd.append("original",   original, `${file.name}-original.jpg`);
+        fd.append("country",           country);
+        fd.append("city",              city);
+        fd.append("is_public",         isPublicVal);
+        fd.append("caption",           caption);
+        fd.append("capture_date",      captureDate);
+        fd.append("latitude",          lat);
+        fd.append("longitude",         lon);
+        fd.append("original_filename", file.name);
+        fd.append("thumb",             thumb,    `${file.name}-thumb.jpg`);
+        fd.append("medium",            medium,   `${file.name}-medium.jpg`);
+        fd.append("full",              full,     `${file.name}-full.jpg`);
+        fd.append("original",          original, `${file.name}-original.jpg`);
 
         const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
 
