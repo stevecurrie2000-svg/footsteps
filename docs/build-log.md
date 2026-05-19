@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 19 May 2026, end of Phase 4 Slice 5 session
+**Last updated**: 19 May 2026, end of Phase 5 session
 
 | Item | State |
 |---|---|
@@ -22,9 +22,9 @@ boundaries.
 | Phase 4 Slice 3 — Nominatim geocoding + auto-create | ✅ Done |
 | Phase 4 Slice 4 — Per-file review table | ✅ Done |
 | Phase 4 Slice 5 — `/admin/countries` management | ✅ Done |
-| Phase 5 — Family section + Access | ⏳ Not started — next session |
+| Phase 5 — Private section + Access | ⏳ Code deployed, verification partially done |
 | Phase 6 — Polish | ⏳ Not started |
-| Next immediate task | Start Phase 5 — family section structure + Cloudflare Access app |
+| Next immediate task | Fix Footsteps Private Access app (add `private` bare-path destination), complete Phase 5 verification |
 
 ---
 
@@ -125,33 +125,34 @@ Will include:
 
 ## Phase 5: Private Section + Access ⏳
 
-*Planned, not yet started. Design updated 19 May 2026.*
+*Code deployed 19 May 2026. Verification in progress.*
 
-Will include:
-- Rename "family" → "private" throughout codebase, schema, and UI:
-  - D1 column `countries.family_thumbnail_photo_id` → `private_thumbnail_photo_id`
-    (migration 0003 via table-swap dance)
-  - UI copy: "Family / Public" toggle → "Private / Public"
-  - URL prefix `/family/*` → `/private/*`
-  - Admin references throughout
-- Cloudflare Access setup with **Google SSO + per-person email allowlist**
-  (not shared password — gives named access log and per-person revocation)
-- `/private` section mirroring public structure: country grid →
-  country page with city sections → photo grids
-- Routing logic to keep private photos out of public listings
-  (already in place via `is_public` filter; just extended for new routes)
-- Image-serving route `/i/[key]` extended to honour Access claims for
-  private photos (currently returns 404 for `is_public = 0`)
-- Uses `private_thumbnail_photo_id` (set automatically by Slice 5's
-  upload logic on first photo of a new country)
+**Built**:
+- **Migration 0003** — `countries.family_thumbnail_photo_id` renamed to
+  `private_thumbnail_photo_id` via SQLite table-swap dance. Applied local
+  + remote.
+- **Codebase-wide rename "family" → "private"** across all API endpoints,
+  admin pages, modal component, and upload pipeline. `is_public` boolean
+  unchanged.
+- **`src/lib/private-auth.ts`** — `requirePrivateViewer` with 4-email
+  allowlist (stevecurrie2000, misslorraineingram, mia.currie01,
+  alexcurrie429). Returns 404 not 403.
+- **`src/pages/private/index.astro`** — country grid filtered to countries
+  with private photos, sorted by most-recent private upload.
+- **`src/pages/private/countries/[slug].astro`** — per-city sections + photo
+  grids, `is_public = 0` filter.
+- **`/i/[key].ts`** extended: private photos require `Cf-Access-Jwt-Assertion`
+  header; public photos unchanged.
+- **`BaseLayout.astro`** — `isPrivate` prop adds `bg-amber-950/10` warm tint
+  to nav; footer gains muted "Private" link on every page.
+- **Cloudflare Access app "Footsteps Private"** — Google SSO, 4-email
+  allowlist policy, destinations: `private/*`, `api/private/*`, `i/*`.
 
-Open questions for Phase 5 design session:
-- Visual marker on `/private` so viewers know which side they're on?
-- Cross-linking: nav link from public to private, or hide entrance?
-- Photo overlap: strictly public-OR-private (current `is_public`
-  boolean implies this), or some photos visible to both audiences?
-- Sort order on `/private`: same as public ("most recent first"),
-  or different?
+**Pending** (carried to next session):
+- Add `private` bare-path destination to Footsteps Private Access app
+  (current `private/*` wildcard doesn't cover bare `/private`).
+- Complete Phase 5 verification (6 remaining tests).
+- Real-world test with the three non-admin viewers (Lorraine, Mia, Alex).
 
 ---
 
@@ -171,8 +172,6 @@ Will include:
 
 ## Open Decisions
 
-- **Family password**: To be set when Cloudflare Access configured in
-  Phase 5.
 - **Watermark**: Not yet decided whether to add a subtle watermark to
   public photos.
 
@@ -1377,6 +1376,149 @@ Claude Code run. No code changes had been made prior to this session.
 
 ---
 
+### Session: Phase 5 — Private section + Cloudflare Access build (19 May 2026, evening)
+
+**Context**: Phase 5 build session. Design session in the previous
+chat had landed all four open questions (faint warm tint on /private
+nav, hidden from main nav + tiny footer link, strict one-or-the-other
+audience, most-recent-private-upload-first sort) and 8 locked
+decisions. This session executed the full Claude Code brief and ran
+into a Cloudflare Access destination configuration issue mid-
+verification.
+
+**What was built**
+
+- **Migration 0003**: `countries.family_thumbnail_photo_id` renamed
+  to `private_thumbnail_photo_id` via SQLite table-swap dance.
+  Applied local + remote, PRAGMA verified.
+- **Codebase-wide rename "family" → "private"** in a single commit:
+  - `src/pages/api/admin/upload.ts` — auto-thumbnail column rename
+  - `src/pages/api/admin/countries/list.ts`, `[slug].ts` — column +
+    action names
+  - `src/pages/admin/countries/index.astro`,
+    `src/pages/admin/index.astro`,
+    `src/components/AdminModal.astro` — UI strings and audience
+    parameter values
+  - `is_public` boolean unchanged
+- **New page templates**:
+  - `src/pages/private/index.astro` — country grid mirroring
+    homepage, filtered to countries with private photos, sorted by
+    most recent private upload
+  - `src/pages/private/countries/[slug].astro` — city sections +
+    photo grids, private-only
+- **New helper `src/lib/private-auth.ts`** — mirrors `requireAdmin`
+  pattern. Allowlist of 4 emails (stevecurrie2000, misslorraineingram,
+  mia.currie01, alexcurrie429 — all gmail). Returns 404 (not 403)
+  on unauthenticated to avoid leaking the section's existence.
+- **`/i/[key].ts` extended** to require `Cf-Access-Jwt-Assertion`
+  header for private photos. Public photos unchanged. Returns 404
+  on missing claim.
+- **BaseLayout** accepts `isPrivate` prop; applies warm tint to nav
+  when true. Footer gains a single muted "Private" link on every
+  page.
+- **Cloudflare Access app "Footsteps Private"** created. Three
+  destinations: `private/*`, `api/private/*`, `i/*`. Google SSO.
+  Policy "Private viewers" allows the 4 emails above.
+
+**Issues encountered and fixed**
+
+- **Pre-existing `/admin` 403 bug** (carried over from a prior
+  session, only noticed mid-Phase 5 verification). Bare
+  `https://footsteps.gallery/admin` and `/admin/` both returned a
+  plain-text "Forbidden" from the Worker. Root cause: the Cloudflare
+  Access "Footsteps Admin" app's destinations were `admin/*` and
+  `api/admin/*` — and `admin/*` does NOT match the bare path
+  `/admin` (the `*` requires at least one character after the
+  slash). Bare `/admin` was therefore ungated, the Worker received
+  the request without the `Cf-Access-Authenticated-User-Email`
+  header, and `requireAdmin` 403'd it. **Fix**: added a third
+  destination row with path `admin` (no slash, no wildcard) to the
+  Footsteps Admin Access app. Verified: bare `/admin` now redirects
+  to Google sign-in, full flow works.
+
+**Issues identified but not yet fixed**
+
+- **Same wildcard gap on "Footsteps Private"**. Bare
+  `https://footsteps.gallery/private` returns 404 (not the Google
+  sign-in challenge), because `private/*` doesn't cover bare
+  `/private`. Fix is identical to admin: add a `private` destination
+  (no slash, no wildcard) to the Footsteps Private Access app.
+  **Carried to next session** along with the remaining verification
+  tests.
+
+**Verified working before pause**
+
+- ✅ Migration 0003 applied to remote D1; column renamed
+- ✅ `/admin` and `/admin/countries` both function after the rename
+  and after the bare-path destination fix
+- ✅ Phase 5 deploy is green in GitHub Actions
+- ✅ `/private` route exists at the edge (returns 404 from the
+  Worker rather than DNS failure or 500)
+
+**Not yet verified** (Phase 5 verification carried to next session)
+
+- ⏳ `/private` redirects to Google sign-in for unauthenticated
+  (pending Private app destination fix)
+- ⏳ Signed-in allowlisted user lands on `/private`
+- ⏳ Private photo upload via `/admin` renders on `/private/<slug>`
+- ⏳ `/i/<r2_key>` returns 404 for private photo when accessed
+  without Access session
+- ⏳ Public photo URL still works without sign-in
+- ⏳ Non-allowlisted Google account gets 404
+- ⏳ Footer "Private" link present on every page
+
+**Decisions made this session**
+
+- **404 over 403 for ungated bare paths**: when the wildcard gap
+  was exposed, the Worker's behaviour (404 via `requirePrivateViewer`,
+  403 via `requireAdmin`) matched the "leak no information" stance
+  for private and the "you tried to access admin" stance for admin.
+  Confirmed this is the right pattern; no change planned.
+
+**Left unfinished / carried to next session**
+
+- **Add `private` destination** to Footsteps Private Access app
+  (Cloudflare dashboard work, see Issues identified above).
+- **Phase 5 verification tests 1–8** (walked through the brief
+  earlier, paused after Test 1 failed in the expected way).
+- **Real-world testing with the three non-admin allowlisted users**
+  (Lorraine, Mia, Alex) — send the URL when verification is clean.
+- **Phase 6 begins after verification closes out**: lightbox, lazy
+  loading + Astro `<Image>` optimisation, custom 404 page,
+  Cloudflare Analytics, JWT signature validation for both auth
+  helpers, watermark decision on public photos.
+- **Revoke `footsteps-upload-script` API token** — still pending.
+- **`infrastructure.md`** — still not created. Now has 4 active
+  things to document: 2 API tokens (`footsteps-github-actions-deploy`
+  active, `footsteps-upload-script` to be revoked) and 2 Access
+  apps ("Footsteps Admin", "Footsteps Private").
+- **`docs/footsteps_architecture_post_phase_3.svg`** and
+  **`docs/Next Claude prompt - footsteps.txt`** — still untracked.
+- **Node 20 deprecation on action wrappers** — bump to `@v5` when
+  stable.
+
+**Lessons learned this session**
+
+- **Cloudflare Access `path/*` does NOT match the bare `path`.**
+  The wildcard requires at least one character after the trailing
+  slash. Any Access app gating a route at a base path must include
+  both an explicit bare-path destination AND a wildcard destination.
+  Standard pattern for every Access-gated section going forward:
+  destination 1 = `<base>` (no slash, no wildcard), destination 2 =
+  `<base>/*` (wildcard). Same pattern applies to API paths if the
+  API has a base route.
+- **A plain-text "Forbidden" from the Worker is a signal that
+  Access didn't gate the request.** Cloudflare-branded Access denial
+  pages mean Access fired and rejected; the Worker's own
+  `requireAdmin` 403 (plain text, no chrome) means Access never
+  fired and the Worker is responding without the email header.
+  Distinguishing these two on first glance saves diagnostic time.
+- **Update the project's standard Access-app setup procedure**
+  whenever a future Phase touches Access. Pattern: both a bare-path
+  destination AND a wildcard destination for every gated section.
+
+---
+
 ## Lessons learned
 
 **Documentation**
@@ -1437,6 +1579,20 @@ Claude Code run. No code changes had been made prior to this session.
   auto-provisioning on subsequent deploys, because if any deploy
   fails after the namespace is created, the next deploy hits a name
   conflict.
+
+- **Cloudflare Access `path/*` does NOT match the bare path `path`.**
+  The wildcard requires at least one character after the trailing slash.
+  Always add both a bare-path destination (`path`) AND a wildcard
+  destination (`path/*`) when creating an Access app for a section with
+  a navigable base URL. Missing the bare-path entry means the base URL
+  is ungated; the Worker receives it without the Access headers and
+  either 403s or 404s depending on its own auth check.
+- **Distinguish a plain-text Worker response from a Cloudflare Access
+  denial page.** A Cloudflare-branded deny page means Access gated the
+  request and rejected the principal. A plain-text "Forbidden" or
+  "Not found" with no chrome means Access never fired — the route is
+  ungated and the Worker's own auth check is responding. This
+  distinction makes debugging Access misconfigurations much faster.
 
 **Security / credentials**
 
