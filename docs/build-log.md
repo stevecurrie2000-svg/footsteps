@@ -8,19 +8,23 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 18 May 2026, end of Phase 4 Slice 1 build session
+**Last updated**: 19 May 2026, end of Phase 4 Slices 1 verify / 2 / 3 session
 
 | Item | State |
 |---|---|
 | Live site | `footsteps.gallery` + `footsteps.stevecurrie2000.workers.dev` |
-| Deployment model | Cloudflare **Worker** (not Pages), auto-deploy via GitHub Actions on push to main |
+| Deployment model | Cloudflare **Worker**, auto-deploy via GitHub Actions on push to main |
 | Phase 1 — Foundations | ✅ Done |
 | Phase 2 — Country/city pages | ✅ Done |
-| Phase 3 — Storage & database | ✅ Done — first photo live |
-| Phase 4 — Admin upload pipeline | 🔄 Slice 1 substantially complete, Slices 2–5 pending |
+| Phase 3 — Storage & database | ✅ Done |
+| Phase 4 Slice 1 — Admin upload + Access | ✅ Done (verified post-BaseLayout fix) |
+| Phase 4 Slice 2 — EXIF parsing | ✅ Done |
+| Phase 4 Slice 3 — Nominatim geocoding + auto-create | ✅ Done |
+| Phase 4 Slice 4 — Bulk-edit review screen | ⏳ Not started — next session |
+| Phase 4 Slice 5 — `/admin/countries` management | ⏳ Not started |
 | Phase 5 — Family section + Access | ⏳ Not started |
 | Phase 6 — Polish | ⏳ Not started |
-| Next immediate task | Cloudflare cache purge + final Slice 1 verification, then start Slice 2 — EXIF parsing on upload |
+| Next immediate task | Start Slice 4 — bulk-edit review screen, with the Greater London canonical-naming question to revisit using real upload data |
 
 ---
 
@@ -666,6 +670,242 @@ geocoding, no bulk edit (those are Slices 2–5).
 - **Cloudflare may serve cached HTML after a successful Worker deploy.**
   The Worker version dashboard is the source of truth, not the rendered
   page. Cache purge if there's a mismatch.
+
+---
+
+### Session: Phase 4 Slices 1 verification, 2 (EXIF), 3 (Nominatim) — May 2026
+
+**Context**: Returned to verify Slice 1's cosmetic deploy and continue
+through Slices 2 and 3 of Phase 4. The previous session's "Cloudflare
+edge cache holding old HTML" theory turned out to be wrong — the real
+cause was structural and worth recording properly.
+
+**Slice 1 verification + root-cause correction**:
+
+The pre-polish appearance on `/admin` after the polish deploy wasn't
+edge caching. The real cause was that `global.css` was being imported
+**per page** (in `src/pages/index.astro`) rather than from
+`BaseLayout.astro`. The admin page used BaseLayout but never imported
+the stylesheet itself, so it rendered with browser defaults and no
+Tailwind. Homepage and country pages worked only because they each
+imported `global.css` independently.
+
+The "Tailwind v4 production CSS scanner is unreliable for
+arbitrary-value classes" lesson from the previous session's entry
+is therefore wrong — the theme-token swap was a useful improvement
+anyway (less fragile pattern) but didn't actually fix the
+unstyled-admin-page problem because the real issue was a missing
+stylesheet import, not selector matching.
+
+**Fix**: Move `import "../styles/global.css"` into BaseLayout's
+frontmatter; remove the per-page imports from index.astro and
+countries/[slug].astro. Every page using BaseLayout now gets Tailwind
+automatically. Same fix prevents the Phase 5 `/family/*` pages from
+hitting the same problem.
+
+Commit: `fix: move global.css import into BaseLayout`. Slice 1 then
+verified end-to-end in fresh incognito — dark theme, pill toggle,
+file picker single-prompt, thumbnail size, upload flow all correct.
+
+**Slice 2 — EXIF parsing**:
+
+Client-side EXIF extraction via `exifr` (npm package, ~30KB,
+supports JPEG/HEIC/CR3). Parsed before the canvas resize, with
+targeted `pick` array (`DateTimeOriginal`, GPS lat/lon refs) and
+`gps: true` so exifr handles N/S/E/W sign conversion automatically.
+
+UI: small label under each thumbnail — "📅 14 Jun 2026 · 📍 GPS" or
+"📅 No date · 📍 No GPS". Uses theme tokens
+(`text-foreground/60`, `text-xs`).
+
+Upload endpoint extended to accept four new optional FormData fields:
+`capture_date`, `latitude`, `longitude`, `original_filename`. All
+nullable in the existing D1 schema. Parameterised INSERT, loose
+validation (range checks for lat/lon, ISO date parse for
+capture_date), missing/invalid data stored as null rather than
+failing the upload.
+
+Decision: manual country/city selection always wins. GPS stored in
+D1 as data, not consulted for routing in this slice (geocoding is
+Slice 3).
+
+**Slice 3 — Nominatim reverse geocoding + auto-create countries/cities**:
+
+Two pre-flight blockers identified before any code was written:
+
+1. `countries.country_code` column doesn't exist in the schema.
+   Decision: skip persisting it. Keep it on the `GeocodedLocation`
+   interface as a return value for future use, but don't thread it
+   through FormData or INSERT statements. No new migration.
+
+2. Homepage country grid had no public-photo filter, so
+   auto-created countries would appear with no thumbnail
+   immediately. Decision: add `WHERE EXISTS (SELECT 1 FROM photos
+   WHERE country_id = countries.id AND is_public = 1)` to the
+   homepage query as part of the same Slice 3 commit.
+
+**What was built**:
+
+- `src/lib/nominatim.ts` — new module. `reverseGeocode(lat, lon)`
+  with 5s AbortController timeout, no retry. City resolution chain:
+  `address.city` → `address.town` → `address.village` →
+  `address.suburb`. `slugify(name)` helper: NFD-normalise → strip
+  accents → lowercase → remove apostrophes (both straight and
+  curly) → collapse non-alphanumerics to hyphens → trim. Test
+  cases verified in diff review: "Côte d'Ivoire" → `cote-divoire`,
+  "São Paulo" → `sao-paulo`, "St. Petersburg" → `st-petersburg`.
+
+- `src/pages/admin/index.astro` — per-file geocode after EXIF parse,
+  1100ms throttle between calls in multi-file batches (Nominatim
+  fair-use policy is 1 req/sec). On success, country and city
+  dropdowns auto-fill; if Nominatim returns a country/city not in
+  D1, inject a `__new__:<slug>` option with "(new)" suffix into
+  the dropdown. On failure (timeout, network, missing address
+  fields), `showToast` displays "Couldn't auto-detect location for
+  [filename] — pick manually", dropdowns stay empty, user picks
+  manually. Toast component is ~30 lines of inline JS, fade-in via
+  `requestAnimationFrame`, auto-dismiss after 4s.
+
+- `src/pages/api/admin/upload.ts` — accepts `geocoded_country` and
+  `geocoded_city` FormData fields (capped at 100 chars). Detects
+  `__new__:` prefix on the country/city form values; validates the
+  claimed slug against `slugify(geocodedName)` as a tamper check.
+  `INSERT ... ON CONFLICT(slug) DO NOTHING RETURNING id` pattern
+  for country and city create; fallback SELECT when ON CONFLICT
+  fires. Photo INSERT + conditional thumbnail UPDATE (only when
+  `is_public = 1` AND `thumbnail_photo_id IS NULL`) wrapped in a
+  D1 batch. Country and city creates run as standalone statements
+  before the batch because the photo INSERT needs their returned
+  IDs.
+
+- `src/pages/index.astro` — country grid query gained
+  `WHERE EXISTS` clause filtering to countries with at least one
+  public photo.
+
+**Decisions made**:
+
+- **Geocoding service**: Nominatim. Free, no signup, no key
+  management. Fair-use policy (1 req/sec) easily within Footsteps'
+  weekly batch sizes. OpenCage remains a future option if Nominatim
+  proves unreliable in practice.
+- **When geocoding happens**: client-side, on file select. Dropdowns
+  auto-fill before upload. Matches the original brief and gives
+  immediate feedback for batch uploads.
+- **New country handling**: silent auto-create. The whole point of
+  GPS auto-detection is "I don't have to think about it" — confirming
+  every new country defeats the purpose.
+- **First photo as thumbnail**: yes, but only for public photos. If
+  the first photo from a new country is Family, the country is
+  created with `thumbnail_photo_id = null` and won't appear on the
+  public homepage (because of the EXISTS filter) until a public
+  photo arrives. Thumbnail field remains a plain updatable column
+  for Slice 5 to manage.
+- **Nominatim failure**: toast notification + empty dropdowns + manual
+  pick. Never block the upload, never silently fail.
+- **City resolution**: largest enclosing locality (city → town →
+  village → suburb). Trade-off: small villages roll up to their
+  parent city (e.g. Castle Combe → Chippenham). GPS coords still
+  stored in D1, so granular location data isn't lost.
+- **Country name format**: use Nominatim's name as-is ("United
+  Kingdom", "Czechia"). One-off SQL UPDATE remains possible later
+  if a specific name needs adjusting.
+- **`country_code`**: not stored. Function returns it; nothing else
+  uses it. YAGNI.
+- **Slug apostrophe handling**: apostrophes removed (not replaced
+  with hyphens). "Côte d'Ivoire" → `cote-divoire`. Matches default
+  behaviour of common slug libraries; ugly but stable.
+
+**Verified working**:
+- ✅ Slice 1 fresh-incognito on `/admin`: dark theme, pill toggle,
+  single-prompt file picker, thumbnail size, end-to-end upload
+- ✅ Slice 2: capture date + GPS status rendering correctly under
+  thumbnail ("14 Jun 2025 · 📍 GPS" for a Tower Bridge phone photo)
+- ✅ Slice 3: Tower Bridge photo with GPS → country auto-filled
+  "United Kingdom" (slug match), city auto-filled "Greater London
+  (new)" (Nominatim's name didn't match existing "London" row)
+
+**Issues encountered**:
+
+- **Tailwind theme-token swap from the previous session was a red
+  herring**. The real cause of the unstyled admin page was a missing
+  `global.css` import in BaseLayout. The theme-token improvement
+  itself is fine (better pattern long-term), but the previous
+  session's "Tailwind v4 scanner unreliable" lesson is incorrect.
+  Lesson updated below.
+
+- **Nominatim returns "Greater London" rather than "London"** for
+  GPS coordinates in central London. This is consistent with
+  Nominatim's modelling of UK administrative geography
+  (Greater London is the city-level admin entity). It doesn't match
+  the existing `london` row in D1, so Slice 3 dutifully proposes
+  creating a `greater-london` row with "(new)" suffix. The system
+  is behaving correctly; the question is about canonical naming
+  conventions.
+
+  Considered options: (a) rename existing London → Greater London;
+  (b) build a `city_aliases` table that maps geocoded names to
+  canonical rows; (c) skip auto-match for now and live with the
+  manual dropdown override per upload. **Decision**: option (c).
+  Slice 4's bulk-edit review screen is the natural place to handle
+  per-batch overrides, and we don't yet have enough data to know
+  how often the canonical-naming mismatch will recur. Aliases are
+  a generic solution to a problem we've only seen once; revisit
+  when Slice 4 exists and the real frequency is visible.
+
+**Left unfinished** (carried to next session):
+
+- **Slice 4 — bulk-edit review screen**. Next session's primary work.
+  Will include per-photo metadata override (country/city change before
+  commit), and will be the natural place to revisit the Greater
+  London / canonical naming question with real data on how often
+  mismatches happen.
+- **Slice 5 — `/admin/countries` page**. Retrospective country/city
+  management (rename, change thumbnail, reorder, delete orphans).
+- **Orphan country/city rows** if an upload fails after country/city
+  create but before photo insert. Documented inline in `upload.ts`
+  as a known trade-off; Slice 5's admin page will handle cleanup.
+- **Revoke `footsteps-upload-script` API token in Cloudflare** —
+  still pending. Defence-in-depth cleanup.
+- **`infrastructure.md` doc** — still not created.
+- **`docs/footsteps_architecture_post_phase_3.svg`** — still
+  untracked in working tree.
+- **Node 20 deprecation on action wrappers** — bump to `@v5` when
+  stable. Non-urgent.
+- **JWT signature validation** in `src/lib/admin-auth.ts` — Phase 6
+  hardening item.
+
+**Lessons learned this session** (to fold into Lessons):
+
+- **`BaseLayout` should own global stylesheet imports**, not
+  individual pages. Per-page imports create a footgun: any new
+  page using the layout but forgetting the import renders unstyled.
+  Centralising in the layout fixes once for all current and future
+  pages. Same rule will apply when adding the family section in
+  Phase 5.
+- **Earlier "Tailwind v4 scanner is unreliable" lesson is incorrect**
+  — the unstyled admin page was caused by a missing stylesheet
+  import, not by Tailwind's class scanner missing arbitrary-value
+  utilities. Theme tokens are still a better pattern than arbitrary
+  hex classes (more readable, design-system-friendly), but they're
+  not a workaround for a scanner bug because there isn't one.
+- **Don't build generic solutions to problems seen once**. The
+  Greater London mismatch was tempting to solve with a full alias
+  system; deferring to Slice 4 lets real-world data inform whether
+  aliases are worth the complexity. Common engineering trap; worth
+  the conscious resistance.
+- **Nominatim is fast and reliable in practice**. No timeouts
+  observed in testing. The 1 req/sec policy is loose enough for
+  Footsteps-scale uploads, and the API doesn't require a key. Good
+  default for personal projects.
+- **D1's `INSERT ... ON CONFLICT DO NOTHING RETURNING id` pattern**
+  handles the "create-or-get" idiom cleanly. When ON CONFLICT
+  fires, RETURNING is empty, so a fallback SELECT is needed. Worth
+  remembering for any future "ensure-row-exists" code.
+- **D1 batch ordering**: statements within a batch can't pass data
+  to each other. Country/city create must run before the batch
+  because the photo INSERT needs their IDs. Batch is therefore
+  scoped to "photo insert + thumbnail update", not the full
+  multi-table workflow.
 
 ---
 
