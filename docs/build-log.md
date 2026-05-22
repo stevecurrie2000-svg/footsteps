@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 23 May 2026, 20:35
+**Last updated**: 23 May 2026, 21:15
 
 | Item | State |
 |---|---|
@@ -24,7 +24,7 @@ boundaries.
 | Phase 4 Slice 5 — `/admin/countries` management | ✅ Done |
 | Phase 5 — Private section + Access | ✅ Done (real-world test with Lorraine/Mia/Alex pending) |
 | Phase 6 — Polish | ⏳ In progress — /admin/photos shipped |
-| Next immediate task | Verify /admin/photos in production (filter, edit, cross-country move, audience toggle, new city) |
+| Next immediate task | Phase 6 continued — lightbox, lazy loading + Astro &lt;Image&gt;, custom 404, analytics, JWT validation |
 
 ---
 
@@ -1965,8 +1965,21 @@ set — not reproduced here):
   guard). Mirrors upload.ts pattern exactly.
 
 **Verified locally**: `npm run build` clean, no new TypeScript errors.
-Full functional verification deferred to post-deploy (requires live
-Cloudflare Access session and real D1/R2 data).
+
+**Verified in production** (23 May 2026, post-deploy):
+
+- ✅ Contact-sheet grid loads and renders thumbnails with lock icons on private photos
+- ✅ Filter chips (country/city/audience) combine correctly; URL query string updates and reload preserves state
+- ✅ Sort dropdown changes order
+- ✅ Infinite scroll fetches next 50 when sentinel enters viewport; loading indicator visible; counter updates
+- ✅ Click photo → edit modal opens with medium preview and correct metadata
+- ✅ Edit saves (country/city/audience/caption) persist to D1 via PATCH; grid refreshes on close
+- ✅ Country change in modal cascades city dropdown and clears selection
+- ✅ "+ Add new city" expands inline form; new city created and auto-selected
+- ✅ Audience toggle triggers thumbnail cleanup + auto-set (verified in D1)
+- ✅ Delete removes photo from D1 and R2; grid refreshes
+- ✅ Admin nav strip appears on `/admin`, `/admin/photos`, `/admin/countries`; correct active link highlighted
+- ✅ Admin nav does not appear on public or `/private` pages
 
 **Left unfinished / carries**
 
