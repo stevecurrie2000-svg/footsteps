@@ -1,0 +1,587 @@
+---
+export const prerender = false;
+
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { requireAdmin } from "../../../lib/admin-auth";
+
+const auth = requireAdmin(Astro.request);
+if (auth instanceof Response) return auth;
+---
+
+<BaseLayout title="Admin — Photos" isAdmin={true}>
+  <div class="mx-auto max-w-7xl px-6 py-6 space-y-4">
+
+    <!-- Filters -->
+    <div class="flex flex-wrap items-center gap-3">
+      <select id="filter-country" class="bg-background border border-white/20 rounded px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-white/40">
+        <option value="">All countries</option>
+      </select>
+      <select id="filter-city" class="bg-background border border-white/20 rounded px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-white/40 disabled:opacity-40" disabled>
+        <option value="">All cities</option>
+      </select>
+      <div id="filter-audience" class="flex rounded border border-white/20 overflow-hidden text-sm">
+        <button data-audience="" class="audience-btn px-3 py-1.5 transition-colors bg-white/10 text-foreground">All</button>
+        <button data-audience="public" class="audience-btn px-3 py-1.5 transition-colors text-foreground/40 hover:text-foreground">Public</button>
+        <button data-audience="private" class="audience-btn px-3 py-1.5 transition-colors text-foreground/40 hover:text-foreground">Private</button>
+      </div>
+      <select id="filter-sort" class="bg-background border border-white/20 rounded px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-white/40">
+        <option value="upload_date_desc">Upload date ↓</option>
+        <option value="capture_date_desc">Capture date ↓</option>
+        <option value="country_asc">Country A–Z</option>
+      </select>
+      <div id="filter-chips" class="flex flex-wrap gap-2"></div>
+    </div>
+
+    <!-- Counter -->
+    <p id="photo-counter" class="text-sm text-foreground/40">Loading…</p>
+
+    <!-- Grid -->
+    <div
+      id="photo-grid"
+      class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2"
+    ></div>
+
+    <!-- Infinite scroll sentinel + loading indicator -->
+    <div id="scroll-sentinel" class="h-4"></div>
+    <p id="loading-indicator" class="hidden text-center text-sm text-foreground/40 py-4">Loading more…</p>
+
+  </div>
+
+  <!-- Edit modal -->
+  <div id="edit-modal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true">
+    <div id="edit-modal-backdrop" class="absolute inset-0 bg-black/80"></div>
+    <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl max-h-[90vh] bg-background border border-white/20 rounded flex flex-col overflow-hidden">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-white/10 flex-shrink-0">
+        <h2 class="text-base font-semibold">Edit photo</h2>
+        <button id="edit-modal-close" class="text-foreground/40 hover:text-foreground text-xl leading-none" aria-label="Close">&times;</button>
+      </div>
+      <div class="flex-1 overflow-y-auto p-6 space-y-5">
+
+        <!-- Preview -->
+        <img id="modal-preview" src="" alt="" class="w-full max-h-64 object-contain rounded border border-white/10" />
+
+        <!-- Editable fields -->
+        <div class="grid grid-cols-2 gap-4">
+          <div class="space-y-1">
+            <label class="text-xs text-foreground/40 uppercase tracking-wider">Country</label>
+            <select id="modal-country" class="w-full bg-background border border-white/20 rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-white/40">
+            </select>
+          </div>
+          <div class="space-y-1">
+            <label class="text-xs text-foreground/40 uppercase tracking-wider">City</label>
+            <select id="modal-city" class="w-full bg-background border border-white/20 rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-white/40">
+            </select>
+            <!-- Inline new-city form -->
+            <div id="new-city-form" class="hidden mt-2 space-y-2">
+              <input id="new-city-name" type="text" placeholder="City name" maxlength="100"
+                class="w-full bg-background border border-white/20 rounded px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-white/40" />
+              <p id="new-city-error" class="hidden text-xs text-red-400"></p>
+              <div class="flex gap-2">
+                <button id="new-city-save" class="px-3 py-1 bg-white/10 hover:bg-white/15 text-sm rounded transition-colors">Add city</button>
+                <button id="new-city-cancel" class="px-3 py-1 text-foreground/40 hover:text-foreground text-sm transition-colors">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <label class="text-xs text-foreground/40 uppercase tracking-wider">Audience</label>
+          <div class="flex rounded border border-white/20 overflow-hidden text-sm w-fit">
+            <button id="modal-audience-private" data-val="false" class="modal-audience-btn px-4 py-1.5 transition-colors">Private</button>
+            <button id="modal-audience-public" data-val="true" class="modal-audience-btn px-4 py-1.5 transition-colors">Public</button>
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <label class="text-xs text-foreground/40 uppercase tracking-wider">Caption</label>
+          <textarea id="modal-caption" rows="2" maxlength="500"
+            class="w-full bg-background border border-white/20 rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-white/40 resize-none"
+            placeholder="Optional caption…"></textarea>
+        </div>
+
+        <!-- Read-only metadata -->
+        <div class="border-t border-white/10 pt-4 space-y-1 text-xs text-foreground/40">
+          <p id="modal-filename"></p>
+          <p id="modal-capture-date"></p>
+          <p id="modal-gps"></p>
+          <p id="modal-uploaded-at"></p>
+        </div>
+
+      </div>
+      <div class="flex items-center justify-between px-6 py-4 border-t border-white/10 flex-shrink-0">
+        <button id="modal-delete" class="text-red-400 hover:text-red-300 text-sm transition-colors">Delete photo</button>
+        <div class="flex gap-3">
+          <button id="modal-cancel" class="px-4 py-2 text-sm text-foreground/40 hover:text-foreground transition-colors">Cancel</button>
+          <button id="modal-save" class="px-4 py-2 bg-white/10 hover:bg-white/15 text-sm rounded transition-colors">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<script is:inline>
+(function () {
+  // ── State ────────────────────────────────────────────────────────────────
+  var state = {
+    photos: [],
+    total: 0,
+    offset: 0,
+    loading: false,
+    done: false,
+    country: "",
+    city: "",
+    audience: "",
+    sort: "upload_date_desc",
+    allCountries: [],
+    editPhoto: null,   // full photo object being edited
+    editIsPublic: false,
+  };
+
+  // ── Escape helper ────────────────────────────────────────────────────────
+  function esc(str) {
+    return String(str == null ? "" : str)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return null;
+    try {
+      return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+    } catch { return iso; }
+  }
+
+  // ── URL query string sync ────────────────────────────────────────────────
+  function readUrlState() {
+    var p = new URLSearchParams(location.search);
+    state.country  = p.get("country")  ?? "";
+    state.city     = p.get("city")     ?? "";
+    state.audience = p.get("audience") ?? "";
+    state.sort     = p.get("sort")     ?? "upload_date_desc";
+  }
+
+  function pushUrlState() {
+    var p = new URLSearchParams();
+    if (state.country)  p.set("country",  state.country);
+    if (state.city)     p.set("city",     state.city);
+    if (state.audience) p.set("audience", state.audience);
+    if (state.sort !== "upload_date_desc") p.set("sort", state.sort);
+    var qs = p.toString();
+    history.replaceState(null, "", qs ? "?" + qs : location.pathname);
+  }
+
+  // ── Fetch photos ─────────────────────────────────────────────────────────
+  function buildApiUrl(offset) {
+    var p = new URLSearchParams({ offset: String(offset), limit: "50", sort: state.sort });
+    if (state.country)  p.set("country",  state.country);
+    if (state.city)     p.set("city",     state.city);
+    if (state.audience) p.set("audience", state.audience);
+    return "/api/admin/photos/list?" + p.toString();
+  }
+
+  function loadPage(reset) {
+    if (state.loading) return;
+    if (!reset && state.done) return;
+
+    state.loading = true;
+    document.getElementById("loading-indicator").classList.remove("hidden");
+
+    if (reset) {
+      state.offset = 0;
+      state.photos = [];
+      state.done = false;
+      document.getElementById("photo-grid").innerHTML = "";
+      document.getElementById("photo-counter").textContent = "Loading…";
+    }
+
+    fetch(buildApiUrl(state.offset))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        state.photos = state.photos.concat(data.photos || []);
+        state.total  = data.total || 0;
+        state.offset += (data.photos || []).length;
+        state.done   = state.offset >= state.total;
+        renderGrid(data.photos || []);
+        updateCounter();
+        document.getElementById("loading-indicator").classList.add("hidden");
+        if (state.done) document.getElementById("scroll-sentinel").style.display = "none";
+        state.loading = false;
+      })
+      .catch(function () {
+        document.getElementById("loading-indicator").classList.add("hidden");
+        state.loading = false;
+      });
+  }
+
+  // ── Grid rendering ───────────────────────────────────────────────────────
+  function renderGrid(photos) {
+    var grid = document.getElementById("photo-grid");
+    photos.forEach(function (photo) {
+      var tile = document.createElement("div");
+      tile.className = "relative cursor-pointer group aspect-square overflow-hidden rounded bg-white/5";
+      tile.dataset.photoId = photo.id;
+      tile.innerHTML =
+        '<img src="/i/' + esc(photo.r2_key_thumb) + '" alt="" class="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" loading="lazy" />' +
+        (photo.is_public === 0 ? '<div class="absolute top-1.5 right-1.5 text-xs select-none opacity-70">🔒</div>' : '') +
+        '<div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1.5 translate-y-full group-hover:translate-y-0 transition-transform duration-150">' +
+        '<p class="text-xs font-semibold tracking-widest uppercase text-white/80 truncate">' + esc(photo.city_name) + '</p>' +
+        '</div>';
+      tile.addEventListener("click", function () { openEditModal(photo); });
+      grid.appendChild(tile);
+    });
+  }
+
+  function updateCounter() {
+    document.getElementById("photo-counter").textContent =
+      "Showing " + state.photos.length + " of " + state.total;
+  }
+
+  // ── Infinite scroll ──────────────────────────────────────────────────────
+  var observer = new IntersectionObserver(function (entries) {
+    if (entries[0].isIntersecting && !state.loading && !state.done) {
+      loadPage(false);
+    }
+  }, { rootMargin: "200px" });
+  observer.observe(document.getElementById("scroll-sentinel"));
+
+  // ── Filter controls ──────────────────────────────────────────────────────
+  function applyFilters() {
+    pushUrlState();
+    updateChips();
+    updateAudienceButtons();
+    loadPage(true);
+  }
+
+  document.getElementById("filter-country").addEventListener("change", function () {
+    state.country = this.value;
+    state.city = "";
+    populateCityFilter(this.value);
+    applyFilters();
+  });
+
+  document.getElementById("filter-city").addEventListener("change", function () {
+    state.city = this.value;
+    applyFilters();
+  });
+
+  document.getElementById("filter-sort").addEventListener("change", function () {
+    state.sort = this.value;
+    applyFilters();
+  });
+
+  document.querySelectorAll(".audience-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      state.audience = btn.dataset.audience;
+      applyFilters();
+    });
+  });
+
+  function updateAudienceButtons() {
+    document.querySelectorAll(".audience-btn").forEach(function (btn) {
+      var active = btn.dataset.audience === state.audience;
+      btn.classList.toggle("bg-white/10", active);
+      btn.classList.toggle("text-foreground", active);
+      btn.classList.toggle("text-foreground/40", !active);
+    });
+  }
+
+  function updateChips() {
+    var chips = document.getElementById("filter-chips");
+    chips.innerHTML = "";
+
+    function chip(label, onRemove) {
+      var span = document.createElement("span");
+      span.className = "flex items-center gap-1 bg-white/10 rounded-full px-3 py-0.5 text-xs text-foreground";
+      span.innerHTML = esc(label) + ' <button class="hover:text-white/60">&times;</button>';
+      span.querySelector("button").addEventListener("click", onRemove);
+      chips.appendChild(span);
+    }
+
+    if (state.country) {
+      var cname = (state.allCountries.find(function (c) { return c.slug === state.country; }) || {}).name || state.country;
+      chip(cname, function () { state.country = ""; state.city = ""; document.getElementById("filter-country").value = ""; populateCityFilter(""); applyFilters(); });
+    }
+    if (state.city) {
+      chip(state.city, function () { state.city = ""; document.getElementById("filter-city").value = ""; applyFilters(); });
+    }
+    if (state.audience) {
+      chip(state.audience === "public" ? "Public" : "Private", function () { state.audience = ""; applyFilters(); });
+    }
+  }
+
+  // ── Populate country filter ───────────────────────────────────────────────
+  function populateCountryFilter(countries) {
+    state.allCountries = countries;
+    var sel = document.getElementById("filter-country");
+    sel.innerHTML = '<option value="">All countries</option>';
+    countries.forEach(function (c) {
+      var opt = document.createElement("option");
+      opt.value = c.slug;
+      opt.textContent = c.name;
+      if (c.slug === state.country) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }
+
+  function populateCityFilter(countrySlug) {
+    var sel = document.getElementById("filter-city");
+    sel.innerHTML = '<option value="">All cities</option>';
+    sel.disabled = !countrySlug;
+    if (!countrySlug) return;
+    var country = state.allCountries.find(function (c) { return c.slug === countrySlug; });
+    if (!country || !country.cities) return;
+    country.cities.forEach(function (ci) {
+      var opt = document.createElement("option");
+      opt.value = ci.slug;
+      opt.textContent = ci.name;
+      if (ci.slug === state.city) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }
+
+  // ── Edit modal ────────────────────────────────────────────────────────────
+  function openEditModal(photo) {
+    state.editPhoto = photo;
+    state.editIsPublic = photo.is_public === 1;
+
+    document.getElementById("modal-preview").src = "/i/" + photo.r2_key_medium;
+    document.getElementById("modal-caption").value = photo.caption || "";
+    document.getElementById("modal-filename").textContent = photo.original_filename ? "File: " + photo.original_filename : "";
+    document.getElementById("modal-capture-date").textContent = photo.capture_date ? "Captured: " + fmtDate(photo.capture_date) : "";
+    document.getElementById("modal-gps").textContent = (photo.latitude != null && photo.longitude != null)
+      ? "GPS: " + photo.latitude.toFixed(4) + ", " + photo.longitude.toFixed(4) : "";
+    document.getElementById("modal-uploaded-at").textContent = photo.uploaded_at ? "Uploaded: " + fmtDate(photo.uploaded_at) : "";
+
+    populateModalCountry(photo.country_slug, photo.city_id, photo.city_slug, photo.city_name);
+    updateModalAudience();
+    hideNewCityForm();
+
+    document.getElementById("edit-modal").classList.remove("hidden");
+  }
+
+  function closeEditModal() {
+    document.getElementById("edit-modal").classList.add("hidden");
+    state.editPhoto = null;
+  }
+
+  document.getElementById("edit-modal-close").addEventListener("click", closeEditModal);
+  document.getElementById("edit-modal-backdrop").addEventListener("click", closeEditModal);
+  document.getElementById("modal-cancel").addEventListener("click", closeEditModal);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeEditModal();
+  });
+
+  // ── Modal country/city dropdowns ─────────────────────────────────────────
+  function populateModalCountry(selectedSlug, selectedCityId, selectedCitySlug, selectedCityName) {
+    var sel = document.getElementById("modal-country");
+    sel.innerHTML = "";
+    state.allCountries.forEach(function (c) {
+      var opt = document.createElement("option");
+      opt.value = c.slug;
+      opt.textContent = c.name;
+      if (c.slug === selectedSlug) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    populateModalCity(selectedSlug, selectedCityId, selectedCitySlug, selectedCityName);
+  }
+
+  function populateModalCity(countrySlug, selectedCityId, selectedCitySlug, selectedCityName) {
+    var sel = document.getElementById("modal-city");
+    sel.innerHTML = "";
+    var country = state.allCountries.find(function (c) { return c.slug === countrySlug; });
+    if (country && country.cities) {
+      country.cities.forEach(function (ci) {
+        var opt = document.createElement("option");
+        opt.value = ci.id;
+        opt.textContent = ci.name;
+        if (ci.id === selectedCityId) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+    var addOpt = document.createElement("option");
+    addOpt.value = "__add__";
+    addOpt.textContent = "+ Add new city";
+    sel.appendChild(addOpt);
+  }
+
+  document.getElementById("modal-country").addEventListener("change", function () {
+    populateModalCity(this.value, null, null, null);
+    hideNewCityForm();
+  });
+
+  document.getElementById("modal-city").addEventListener("change", function () {
+    if (this.value === "__add__") {
+      showNewCityForm();
+      this.value = "";
+    } else {
+      hideNewCityForm();
+    }
+  });
+
+  // ── Inline city creation ──────────────────────────────────────────────────
+  function showNewCityForm() {
+    document.getElementById("new-city-form").classList.remove("hidden");
+    document.getElementById("new-city-name").focus();
+    document.getElementById("new-city-error").classList.add("hidden");
+    document.getElementById("new-city-name").value = "";
+  }
+
+  function hideNewCityForm() {
+    document.getElementById("new-city-form").classList.add("hidden");
+    document.getElementById("new-city-name").value = "";
+    document.getElementById("new-city-error").classList.add("hidden");
+  }
+
+  document.getElementById("new-city-cancel").addEventListener("click", function () {
+    hideNewCityForm();
+  });
+
+  document.getElementById("new-city-save").addEventListener("click", function () {
+    var name = document.getElementById("new-city-name").value.trim();
+    if (!name) return;
+    var countrySlug = document.getElementById("modal-country").value;
+    var errEl = document.getElementById("new-city-error");
+    errEl.classList.add("hidden");
+
+    fetch("/api/admin/cities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ country_slug: countrySlug, name: name }),
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          errEl.textContent = res.data.error || "Failed to create city";
+          errEl.classList.remove("hidden");
+          return;
+        }
+        // Add new city to allCountries cache so dropdown refreshes correctly
+        var country = state.allCountries.find(function (c) { return c.slug === countrySlug; });
+        if (country) {
+          if (!country.cities) country.cities = [];
+          country.cities.push({ id: res.data.id, slug: res.data.slug, name: res.data.name, country_id: country.id, photo_count: 0 });
+          country.cities.sort(function (a, b) { return a.name.localeCompare(b.name); });
+        }
+        hideNewCityForm();
+        populateModalCity(countrySlug, res.data.id, res.data.slug, res.data.name);
+        // Auto-select the new city
+        document.getElementById("modal-city").value = String(res.data.id);
+      })
+      .catch(function () {
+        errEl.textContent = "Network error. Try again.";
+        errEl.classList.remove("hidden");
+      });
+  });
+
+  // ── Audience toggle ───────────────────────────────────────────────────────
+  function updateModalAudience() {
+    var privBtn = document.getElementById("modal-audience-private");
+    var pubBtn  = document.getElementById("modal-audience-public");
+    if (state.editIsPublic) {
+      pubBtn.classList.add("bg-white/10", "text-foreground");
+      pubBtn.classList.remove("text-foreground/40");
+      privBtn.classList.remove("bg-white/10", "text-foreground");
+      privBtn.classList.add("text-foreground/40");
+    } else {
+      privBtn.classList.add("bg-white/10", "text-foreground");
+      privBtn.classList.remove("text-foreground/40");
+      pubBtn.classList.remove("bg-white/10", "text-foreground");
+      pubBtn.classList.add("text-foreground/40");
+    }
+  }
+
+  document.querySelectorAll(".modal-audience-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      state.editIsPublic = btn.dataset.val === "true";
+      updateModalAudience();
+    });
+  });
+
+  // ── Save ──────────────────────────────────────────────────────────────────
+  document.getElementById("modal-save").addEventListener("click", function () {
+    var photo = state.editPhoto;
+    if (!photo) return;
+
+    var countrySlug = document.getElementById("modal-country").value;
+    var cityVal     = document.getElementById("modal-city").value;
+    var caption     = document.getElementById("modal-caption").value.trim() || null;
+
+    if (!countrySlug || !cityVal || cityVal === "__add__") {
+      alert("Please select a country and city.");
+      return;
+    }
+
+    var country = state.allCountries.find(function (c) { return c.slug === countrySlug; });
+    if (!country) { alert("Country not found."); return; }
+
+    var cityId = parseInt(cityVal);
+    if (isNaN(cityId)) { alert("Please select a city."); return; }
+
+    var saveBtn = document.getElementById("modal-save");
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving…";
+
+    fetch("/api/admin/photos/" + encodeURIComponent(photo.id), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        country_id: country.id,
+        city_id: cityId,
+        is_public: state.editIsPublic,
+        caption: caption,
+      }),
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+      .then(function (res) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save";
+        if (!res.ok) {
+          alert(res.data.error || "Save failed.");
+          return;
+        }
+        closeEditModal();
+        // Reload grid to reflect changes
+        readUrlState();
+        loadPage(true);
+      })
+      .catch(function () {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save";
+        alert("Network error. Try again.");
+      });
+  });
+
+  // ── Delete ────────────────────────────────────────────────────────────────
+  document.getElementById("modal-delete").addEventListener("click", function () {
+    var photo = state.editPhoto;
+    if (!photo) return;
+    if (!window.confirm("Permanently delete this photo? This cannot be undone.")) return;
+
+    fetch("/api/admin/photos/" + encodeURIComponent(photo.id), { method: "DELETE" })
+      .then(function (r) {
+        if (r.ok || r.status === 204) {
+          closeEditModal();
+          loadPage(true);
+        } else {
+          return r.json().then(function (d) { alert(d.error || "Delete failed."); });
+        }
+      })
+      .catch(function () { alert("Network error. Try again."); });
+  });
+
+  // ── Boot ──────────────────────────────────────────────────────────────────
+  readUrlState();
+  document.getElementById("filter-sort").value = state.sort;
+  updateAudienceButtons();
+
+  fetch("/api/admin/countries/list")
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      populateCountryFilter(data);
+      populateCityFilter(state.country);
+      updateChips();
+      loadPage(true);
+    })
+    .catch(function () { loadPage(true); });
+}());
+</script>

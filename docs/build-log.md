@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 22 May 2026, 22:15
+**Last updated**: 23 May 2026, 20:35
 
 | Item | State |
 |---|---|
@@ -23,8 +23,8 @@ boundaries.
 | Phase 4 Slice 4 — Per-file review table | ✅ Done |
 | Phase 4 Slice 5 — `/admin/countries` management | ✅ Done |
 | Phase 5 — Private section + Access | ✅ Done (real-world test with Lorraine/Mia/Alex pending) |
-| Phase 6 — Polish | ⏳ Not started |
-| Next immediate task | Phase 6 — Polish (lightbox, lazy loading + Astro <Image>, custom 404, analytics, JWT signature validation) |
+| Phase 6 — Polish | ⏳ In progress — /admin/photos shipped |
+| Next immediate task | Verify /admin/photos in production (filter, edit, cross-country move, audience toggle, new city) |
 
 ---
 
@@ -1871,6 +1871,111 @@ sub-heading):
   files are worth their time cost. Unit tests on the upload route
   would not have caught this because the bug is a missing case, not
   a wrong implementation of an expected case.
+
+---
+
+### Session: Phase 6 — /admin/photos page (23 May 2026, 20:35)
+
+**Context**: First slice of Phase 6. Driven by a real-user need
+surfaced during the 22 May batch upload test — 26 photos uploaded,
+2 with city auto-detect misses that needed post-upload override.
+The existing `/admin/countries` modal deletes photos but doesn't
+support editing metadata. This session builds the full post-upload
+management workflow. Design decisions locked in a prior claude.ai
+planning session.
+
+**What was built**
+
+- **`src/components/AdminNav.astro`** (new) — Admin navigation
+  strip. Three links: Upload / Photos / Countries. Active page
+  styled `text-foreground`; others `text-foreground/40
+  hover:text-foreground/60`. Exact-match for `/admin`, prefix-match
+  for the other two. Rendered by BaseLayout when `isAdmin={true}`.
+
+- **`src/layouts/BaseLayout.astro`** (edit) — Added `isAdmin?:
+  boolean` prop. Conditionally renders `<AdminNav />` between the
+  main nav `</header>` and `<main>`. Added AdminNav import.
+
+- **`src/pages/admin/index.astro`** and
+  **`src/pages/admin/countries/index.astro`** (edits) — Added
+  `isAdmin={true}` to their `<BaseLayout>` call.
+
+- **`src/pages/api/admin/photos/list.ts`** (new) — `GET
+  /api/admin/photos/list`. Supports `country`, `city`, `audience`
+  (`public`|`private`), `sort` (`upload_date_desc` |
+  `capture_date_desc` | `country_asc`), `offset`, `limit` (max
+  200). Returns `{ photos: [...], total: N }`. D1 batch of photos
+  query + count query. Parameterised binds throughout.
+
+- **`src/pages/api/admin/photos/[id].ts`** (edit) — Added `PATCH`
+  handler alongside the existing `DELETE`. Accepts JSON `{
+  country_id, city_id, is_public, caption }` (all optional —
+  unset fields retain current values). Reads current photo state
+  first, validates country/city existence, then D1 batch:
+  - UPDATE photos with merged values
+  - Clear old audience's thumbnail on old country (targeted: WHERE
+    col = this photo ID — no-op if not the thumbnail)
+  - Auto-set new audience's thumbnail on new country (IS NULL guard)
+  Returns 200 `{ id, country_id, city_id, is_public, caption }`.
+
+- **`src/pages/admin/photos/index.astro`** (new) — Contact-sheet
+  photo management page. `requireAdmin` in frontmatter. Features:
+  - **CSS Grid**: 2/3/4/5 columns at sm/lg/xl breakpoints
+  - **Filter bar**: country/city dropdowns (cascading), audience
+    three-way segment (All/Public/Private), sort dropdown. State
+    synced to URL query string so reload preserves filters.
+  - **Active filter chips**: removable chips for country/city/
+    audience. Country chip shows display name.
+  - **Counter**: "Showing N of M" updated on every load/loadmore.
+  - **Infinite scroll**: IntersectionObserver on sentinel at bottom.
+    Fetches 50 more when sentinel enters viewport (200px margin).
+    Loading indicator visible during fetch. Sentinel hidden when
+    all photos loaded.
+  - **Grid tiles**: square aspect-ratio with lock icon (🔒) for
+    private photos, city name revealed on hover via gradient overlay.
+  - **Edit modal** (inline): large medium-variant preview, country/
+    city dropdowns (populated from `/api/admin/countries/list`),
+    audience pill toggle, caption textarea (500 char), read-only
+    metadata (filename, capture date, GPS, upload date). Save/
+    Cancel/Delete buttons. Esc and click-outside close without save.
+  - **Inline city creation**: "Add new city" last option in city
+    dropdown. Clicking expands an inline form. POST to
+    `/api/admin/cities`, success auto-refreshes city dropdown and
+    selects new city. 409 collision displayed inline.
+  - On Save: PATCH request with country_id, city_id, is_public,
+    caption. On 200, close modal and reload grid.
+  - On Delete: confirm dialog → DELETE → close modal and reload grid.
+
+**AdminModal (`/admin/countries`) is already delete-only.** No
+changes needed — `openPhotoManager` only shows Delete buttons.
+Verified by reading `src/components/AdminModal.astro`.
+
+**Cloudflare Access destinations:** No changes needed. New routes
+`/admin/photos` and `/api/admin/photos/list` are covered by the
+existing `admin/*` and `api/admin/*` wildcard destinations on the
+Footsteps Admin Access app.
+
+**Design decisions** (see Phase 6 planning in claude.ai for the full
+set — not reproduced here):
+- Fresh inline modal built rather than extending AdminModal: the
+  edit modal is a form layout; AdminModal is a photo-grid picker.
+  Different shapes make extension a liability rather than a benefit.
+- Thumbnail cleanup in PATCH: targeted clear on old country/audience
+  (WHERE col = photoId) + auto-set on new country/audience (IS NULL
+  guard). Mirrors upload.ts pattern exactly.
+
+**Verified locally**: `npm run build` clean, no new TypeScript errors.
+Full functional verification deferred to post-deploy (requires live
+Cloudflare Access session and real D1/R2 data).
+
+**Left unfinished / carries**
+
+- Post-deploy manual verification (see brief acceptance criteria).
+- Phase 6 remaining items: lightbox, lazy loading + Astro `<Image>`,
+  custom 404, Cloudflare Analytics, JWT signature validation.
+- Real-world Phase 5 test with Lorraine/Mia/Alex — still pending.
+- `docs/footsteps_architecture_post_phase_3.svg` — still untracked.
+- Node 20 deprecation on action wrappers — bump `@v5` when stable.
 
 ---
 

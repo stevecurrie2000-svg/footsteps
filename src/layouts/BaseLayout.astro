@@ -1,11 +1,13 @@
 ---
 import "../styles/global.css";
+import AdminNav from "../components/AdminNav.astro";
 
 interface Props {
   title?: string;
   isPrivate?: boolean;
+  isAdmin?: boolean;
 }
-const { title = "Footsteps", isPrivate = false } = Astro.props;
+const { title = "Footsteps", isPrivate = false, isAdmin = false } = Astro.props;
 ---
 
 <!doctype html>
@@ -49,6 +51,8 @@ const { title = "Footsteps", isPrivate = false } = Astro.props;
         </div>
       </nav>
     </header>
+
+    {isAdmin && <AdminNav />}
 
     <main class="flex-1">
       <slot />
