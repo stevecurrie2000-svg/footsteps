@@ -38,14 +38,14 @@ const { photos, mode } = Astro.props;
   <!-- Prev arrow -->
   <button
     id="lightbox-prev"
-    class="absolute left-4 top-1/2 -translate-y-1/2 z-10 text-foreground/60 hover:text-foreground text-4xl p-4 transition-opacity md:opacity-0 md:hover:opacity-100"
+    class="absolute left-4 top-1/2 -translate-y-1/2 z-10 text-foreground/60 hover:text-foreground text-4xl p-4 transition-opacity opacity-0 hover:opacity-100"
     aria-label="Previous photo"
   >‹</button>
 
   <!-- Next arrow -->
   <button
     id="lightbox-next"
-    class="absolute right-4 top-1/2 -translate-y-1/2 z-10 text-foreground/60 hover:text-foreground text-4xl p-4 transition-opacity md:opacity-0 md:hover:opacity-100"
+    class="absolute right-4 top-1/2 -translate-y-1/2 z-10 text-foreground/60 hover:text-foreground text-4xl p-4 transition-opacity opacity-0 hover:opacity-100"
     aria-label="Next photo"
   >›</button>
 
@@ -92,10 +92,12 @@ const { photos, mode } = Astro.props;
     }
 
     function updateBoundaryHints() {
-      prevBtn.classList.toggle('opacity-30', currentIndex === 0);
-      prevBtn.classList.toggle('pointer-events-none', currentIndex === 0);
-      nextBtn.classList.toggle('opacity-30', currentIndex === _photos.length - 1);
-      nextBtn.classList.toggle('pointer-events-none', currentIndex === _photos.length - 1);
+      const atFirst = currentIndex === 0;
+      const atLast = currentIndex === _photos.length - 1;
+      prevBtn.classList.toggle('!opacity-30', atFirst);
+      prevBtn.classList.toggle('pointer-events-none', atFirst);
+      nextBtn.classList.toggle('!opacity-30', atLast);
+      nextBtn.classList.toggle('pointer-events-none', atLast);
     }
 
     function showPhoto(index, pushHistory = true) {
@@ -292,10 +294,12 @@ const { photos, mode } = Astro.props;
 </script>
 
 <style>
-  /* Force arrows visible on touch devices where hover never fires */
+  /* Force arrows visible on touch devices where hover never fires.
+     Exclude boundary-hinted arrows — their !opacity-30 takes precedence. */
   @media (hover: none) {
-    #lightbox-prev, #lightbox-next {
-      opacity: 1 !important;
+    #lightbox-prev:not(.\!opacity-30),
+    #lightbox-next:not(.\!opacity-30) {
+      opacity: 1;
     }
   }
 </style>
