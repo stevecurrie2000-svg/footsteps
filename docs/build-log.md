@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 22 May 2026, 18:33
+**Last updated**: 22 May 2026, 21:00
 
 | Item | State |
 |---|---|
@@ -22,9 +22,9 @@ boundaries.
 | Phase 4 Slice 3 — Nominatim geocoding + auto-create | ✅ Done (geocode fix 22 May 2026) |
 | Phase 4 Slice 4 — Per-file review table | ✅ Done |
 | Phase 4 Slice 5 — `/admin/countries` management | ✅ Done |
-| Phase 5 — Private section + Access | ⏳ Code deployed, verification partially done |
+| Phase 5 — Private section + Access | ⏳ Code + Access apps live, verification walkthrough pending |
 | Phase 6 — Polish | ⏳ Not started |
-| Next immediate task | Complete Phase 5 verification walkthrough (footer Private link now done; bare-path Access destination fix pending dashboard) |
+| Next immediate task | Run Phase 5 verification walkthrough (all infrastructure in place; real-world test with Lorraine/Mia/Alex still to do) |
 
 ---
 
@@ -1601,6 +1601,120 @@ Royal National Park returns null for `city`, `town`, `village`, and `suburb` —
 
 ---
 
+### Session: Cloudflare Access rebuild — Footsteps Private app (22 May 2026, evening)
+
+**Context**: Picking up the Phase 5 carry from 19 May —
+specifically the bare-path `/private` Cloudflare Access destination
+that was identified as needing to be added to the existing Footsteps
+Private Access app. Driven from claude.ai via the Claude Chrome
+extension against a live Cloudflare Zero Trust dashboard session.
+No repo or code changes.
+
+**Discovery: app was missing entirely**
+
+A screenshot from the Applications page early in the session
+revealed only "Footsteps Admin" — no "Footsteps Private". Either
+the 19 May save never fully committed, or the app was deleted
+between sessions and the build-log wasn't updated. The carry
+therefore changed shape mid-session: instead of "add a bare-path
+destination", it became "rebuild the entire app from scratch".
+
+**Cloudflare UI changed substantially since 19 May**
+
+The Zero Trust dashboard navigation, URL structure, and app create
+flow have all been refreshed:
+
+- Navigation path is now **Access controls → Applications** (was
+  previously a different IA)
+- URL pattern is `dash.cloudflare.com/<accountId>/one/access-controls/apps`
+- App creation flow split into **Application details** and
+  **Additional settings** tabs
+- The **Application name** field sits *below* the destinations on
+  the Application details tab (not at the top — easy to miss on
+  first scroll)
+- Identity providers, instant authentication toggle, and session
+  duration are all on Application details (not Additional settings
+  as the layout suggests)
+- "Additional settings" is now App Launcher tile, Tags, Custom
+  block pages, CORS, Cookies, AUD tag, OAuth — none of which are
+  required for a basic setup
+
+**What was rebuilt**
+
+Cloudflare Access application **"Footsteps Private"**:
+
+- Type: Self-hosted
+- Destinations (4):
+  - `footsteps.gallery/private` (bare path — the 19 May carry)
+  - `footsteps.gallery/private/*`
+  - `footsteps.gallery/api/private/*`
+  - `footsteps.gallery/i/*`
+- Identity provider: Google only
+- Instant Authentication: ON (auto-enabled when only one IdP is
+  selected — saves clicking through the picker)
+- Session duration: 24 hours (matches Footsteps Admin)
+- Policy "Private viewers" (Action: Allow) — 4 emails:
+  - `stevecurrie2000@gmail.com`
+  - `misslorraineingram@gmail.com`
+  - `mia.currie01@gmail.com`
+  - `alexcurrie429@gmail.com`
+
+**Critical UI bug encountered**
+
+The inline policy builder during app creation does NOT persist the
+policy on save. After clicking the final "Create" button, the
+toast read "Application successfully configured" — but the new
+app appeared in the list with `--` in the Policies column. The
+policy had to be re-created from the app's Manage → Policies tab
+and saved separately via the **Save policy** button, then the app
+itself committed via the bottom **Save** button. This pattern is
+worth documenting because the toast misleads you into thinking
+the policy saved when it didn't.
+
+**Verification**
+
+- ✅ Both apps appear in the Applications list with policies
+  attached: Footsteps Admin (Admin only) and Footsteps Private
+  (Private viewers)
+- ✅ Fresh incognito to `https://footsteps.gallery/private`
+  redirects to Google sign-in via Instant Auth
+- ✅ Signed-in allowlisted account lands on the empty `/private`
+  country grid with warm amber nav tint
+
+**Carries closed by this session**
+
+- Bare-path `/private` Access destination (was on the 19 May carry
+  list)
+- The "rebuild needed" issue surfaced and was resolved within the
+  same session
+
+**Lessons learned (fold into Lessons section)**
+
+- **Cloudflare's Zero Trust UI refreshed in May 2026.** The
+  navigation path is now `Access controls → Applications`, the
+  URL pattern is `dash.cloudflare.com/<accountId>/one/access-controls/apps`,
+  and the app config form is split across Application details and
+  Additional settings tabs. The Application name field is below
+  destinations on Application details (not at the top of the form).
+- **The inline policy builder during app creation does NOT
+  persist the policy.** A "successfully configured" toast appears,
+  but the app saves without the policy attached. Workaround:
+  always create the app first with destinations + IdP + session
+  duration, then enter Manage → Policies → Create new policy,
+  click **Save policy** (inside the policy pane), then click the
+  bottom **Save** (commits the app). Two saves, in that order.
+- **Policies are now reusable objects in the new UI.** They appear
+  in an "Add existing policy" dropdown on the Policies tab, scoped
+  to the team rather than to a single app. Useful for sharing
+  policies across apps, but a footgun when the inline builder
+  silently creates and orphans them.
+- **A "successfully configured" toast does not mean every field
+  saved.** Always cross-check the Applications list view after a
+  save — particularly the Policies column — and refresh the page
+  if anything looks wrong before re-running the save flow.
+
+---
+
 ## Lessons learned
 
 **Documentation**
@@ -1675,6 +1789,31 @@ Royal National Park returns null for `city`, `town`, `village`, and `suburb` —
   "Not found" with no chrome means Access never fired — the route is
   ungated and the Worker's own auth check is responding. This
   distinction makes debugging Access misconfigurations much faster.
+
+**Cloudflare Access dashboard (UI refresh — May 2026)**
+
+- **Cloudflare's Zero Trust UI refreshed in May 2026.** The
+  navigation path is now `Access controls → Applications`, the
+  URL pattern is `dash.cloudflare.com/<accountId>/one/access-controls/apps`,
+  and the app config form is split across Application details and
+  Additional settings tabs. The Application name field is below
+  destinations on Application details (not at the top of the form).
+- **The inline policy builder during app creation does NOT
+  persist the policy.** A "successfully configured" toast appears,
+  but the app saves without the policy attached. Workaround:
+  always create the app first with destinations + IdP + session
+  duration, then enter Manage → Policies → Create new policy,
+  click **Save policy** (inside the policy pane), then click the
+  bottom **Save** (commits the app). Two saves, in that order.
+- **Policies are now reusable objects in the new UI.** They appear
+  in an "Add existing policy" dropdown on the Policies tab, scoped
+  to the team rather than to a single app. Useful for sharing
+  policies across apps, but a footgun when the inline builder
+  silently creates and orphans them.
+- **A "successfully configured" toast does not mean every field
+  saved.** Always cross-check the Applications list view after a
+  save — particularly the Policies column — and refresh the page
+  if anything looks wrong before re-running the save flow.
 
 **Third-party API integration**
 
