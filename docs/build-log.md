@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 23 May 2026, 21:15
+**Last updated**: 24 May 2026, 09:30
 
 | Item | State |
 |---|---|
@@ -23,8 +23,10 @@ boundaries.
 | Phase 4 Slice 4 — Per-file review table | ✅ Done |
 | Phase 4 Slice 5 — `/admin/countries` management | ✅ Done |
 | Phase 5 — Private section + Access | ✅ Done (real-world test with Lorraine/Mia/Alex pending) |
-| Phase 6 — Polish | ⏳ In progress — /admin/photos shipped |
-| Next immediate task | Phase 6 continued — lightbox, lazy loading + Astro &lt;Image&gt;, custom 404, analytics, JWT validation |
+| Phase 6 Slice 1 — `/admin/photos` page | ✅ Done |
+| Phase 6 Slice 2 — Lightbox | ✅ Done |
+| Phase 6 — Polish (remaining) | ⏳ In progress — lazy loading + Astro &lt;Image&gt;, custom 404, analytics, JWT validation |
+| Next immediate task | Phase 6 remaining items, or Phase 5 real-world test with Lorraine/Mia/Alex |
 
 ---
 
@@ -1989,6 +1991,234 @@ set — not reproduced here):
 - Real-world Phase 5 test with Lorraine/Mia/Alex — still pending.
 - `docs/footsteps_architecture_post_phase_3.svg` — still untracked.
 - Node 20 deprecation on action wrappers — bump `@v5` when stable.
+
+---
+
+### Session: Phase 6 Slice 2 — Lightbox (24 May 2026, 08:30)
+
+**Context**: Second slice of Phase 6, off the back of `/admin/photos`
+shipping the previous evening. Design session in claude.ai locked
+all decisions before code was written; no design discussion during
+the build itself.
+
+**Design decisions locked** (in claude.ai, ahead of the build)
+
+- **Visual**: full-bleed black overlay (`bg-black/95`), photo
+  centred, minimal chrome (close × top-right, prev/next arrows,
+  small-caps city label at the bottom)
+- **Navigable set**: all photos on the current page, in DOM order.
+  Country pages have one continuous reel across all city sections;
+  `/admin/photos` reels through whatever the current filter
+  produces.
+- **Inputs**: ← / → keys + Esc on desktop; on-screen arrows fade in
+  on hover (desktop) or always visible (touch); swipe left/right
+  to navigate, swipe down to close on touch.
+- **Image loading**: medium variant (1200px) on open, full variant
+  (2400px) loaded in the background and swapped in silently once
+  ready. Preload medium variants of next + previous photos for
+  instant arrow/swipe.
+- **Boundaries**: stop at first/last, arrow opacity drops to ~30%
+  as a subtle hint (Apple Photos / Lightroom pattern).
+- **URL state**: hash-based (`#photo=<uuid>`), shareable / refresh-
+  resilient, `pushState` so the browser back button closes the
+  lightbox (Instagram / Apple Photos web pattern).
+- **Where available**: public country pages, private country pages,
+  and `/admin/photos`. Admin mode adds a small edit icon (✎) top-
+  left of the lightbox chrome that dispatches a `lightbox:edit`
+  event for the page's existing edit modal to handle.
+- **Image protection**: right-click and image-drag prevented inside
+  the lightbox (matches project's existing protection stance).
+- **Component shape**: single shared `Lightbox.astro` with a
+  `mode: 'public' | 'private' | 'admin'` prop as the extension
+  point for future audience-dependent affordances (future "request
+  full resolution" feature, captions, social sharing).
+
+**What was built**
+
+- **`src/components/Lightbox.astro`** (new) — full lightbox
+  component with the spec above. ~250 lines of Astro template +
+  inline script. Click delegation via `[data-lightbox-id]`
+  attributes; the lightbox script binds on initial render and re-
+  binds after `window.lightboxRefresh()` for admin's dynamic grid.
+- **Wire-up across three pages**:
+  - `src/pages/countries/[slug].astro` — flat photo array built in
+    frontmatter from the cities → photos structure, in DOM order.
+    `data-lightbox-id` added to each photo's wrapper. `mode="public"`.
+  - `src/pages/private/countries/[slug].astro` — same pattern,
+    `mode="private"`.
+  - `src/pages/admin/photos/index.astro` — click handler reworked:
+    plain click now opens the lightbox (not the edit modal). Edit
+    modal opens from the lightbox's edit icon, listening for
+    `lightbox:edit` events. The lightbox's internal photos array
+    is kept in sync with the filterable grid via
+    `window.lightboxRefresh()` calls after initial load, infinite
+    scroll, filter changes, and delete events.
+- **API extension** — `src/pages/api/admin/photos/list.ts` JOINs
+  cities and returns `r2_key_full` and `city_name` on each photo.
+
+**Verified working** (via the Chrome extension on the live site)
+
+- ✅ Click photo on `/countries/united-kingdom` → lightbox opens,
+  medium variant visible, "LONDON" small-caps label centred at
+  bottom, URL hash updated
+- ✅ Click photo on `/admin/photos` → lightbox opens with edit icon
+  top-left
+- ✅ Esc closes; back button closes; close × closes
+- ✅ Hash-based deep link survives refresh (lightbox reopens on
+  the same photo after reload)
+- ✅ Right-click on lightbox image — context menu suppressed
+- ✅ Sequential ← / → arrow keys navigate the full set in DOM
+  order
+- ✅ Admin edit icon opens the existing edit modal for the current
+  photo; close modal returns to lightbox
+
+**Issues encountered (resolved same session)**
+
+Two bugs surfaced during verification and were fixed before close-out
+(separate session entries below).
+
+**Lessons learned**
+
+- **Hash-based lightbox state is worth the small extra code.**
+  Shareability ("look at this photo specifically") plus refresh-
+  resilience plus native back-button behaviour all come from the
+  same ~15-line pattern: `pushState` on open, `popstate` listener
+  for back, `hashchange` listener for in-place navigation. Standard
+  practice on Instagram / Apple Photos / Flickr; should be the
+  default for any image-viewing modal on this site.
+- **Vanilla JS pub/sub via `window.dispatchEvent(new CustomEvent(...))`
+  is a clean way to decouple a shared component from page-specific
+  behaviour.** The lightbox doesn't know what "edit" means on
+  `/admin/photos`; it just emits `lightbox:edit` and lets the page
+  handle it. Same pattern will work for future affordances like
+  "request full resolution" or "share".
+- **Prop-based extension points beat conditional URL inference.**
+  `mode="admin"` is explicit; relying on the URL or photo data shape
+  to infer admin context would have been fragile. Cheap to add the
+  prop now, expensive to retrofit.
+
+---
+
+### Session: Fix — lightbox arrows invisible on desktop + UK page wrong city count (24 May 2026, 09:00)
+
+**Context**: Two bugs surfaced during Phase 6 Slice 2 verification.
+Bundled into a single commit.
+
+**Bug 1 — Lightbox arrows never appeared on hover (desktop)**
+
+**Root cause**: In `src/components/Lightbox.astro`, the prev/next
+buttons used `md:opacity-0 md:hover:opacity-100`. Tailwind v4
+compiles these into two separate media queries that drop the `md:`
+constraint from the hover variant:
+
+```css
+@media (min-width: 48rem) { .md\:opacity-0 { opacity: 0; } }
+@media (hover: hover)     { .md\:hover\:opacity-100:hover { opacity: 1; } }
+```
+
+At desktop widths with hover capability, both rules match on hover
+with identical class specificity. The `md:opacity-0` rule appears
+later in the compiled CSS, so it wins source-order and the arrows
+stay at opacity 0 even on hover.
+
+**Fix**:
+- Dropped the `md:` prefix entirely on both buttons:
+  `md:opacity-0 md:hover:opacity-100` → `opacity-0 hover:opacity-100`.
+  The hover capability is what matters, not screen width.
+- `updateBoundaryHints()` switched from `opacity-30` to `!opacity-30`
+  (Tailwind's `!` important prefix) so hover can't override the
+  boundary hint.
+- The `@media (hover: none)` touch override changed from
+  `opacity: 1 !important` to a `:not(.\!opacity-30)` exclusion, so
+  the boundary hint also wins on touch.
+
+**Bug 2 — UK country page header read "11 CITIES · 1 PHOTOGRAPH"**
+
+**Root cause**: In `src/pages/countries/[slug].astro`, the city
+count query was unscoped — counting every city row in the database
+rather than just the country's cities. The actual UK launch state
+is 3 cities (London, Chelmsford, York). The photo count was
+correct.
+
+**Fix**: scoped the city count to the current country's `id`. Both
+counts in the header now reflect the country specifically.
+
+**Verified**
+
+- ✅ Lightbox arrows now appear on hover at desktop widths
+- ✅ Boundary hint (~30% opacity) still visible at first/last photo
+- ✅ Touch behaviour unchanged: arrows visible by default, boundary
+  hint still applies
+- ✅ `https://footsteps.gallery/countries/united-kingdom` header
+  reads "3 CITIES · 1 PHOTOGRAPH"
+
+**Lessons**
+
+- **Tailwind v4's chained variant compilation is not always
+  intuitive.** `md:hover:opacity-100` doesn't compile to "if md
+  AND hover" — it splits into two queries that fight each other on
+  source order. When chaining variants and getting unexpected
+  results, inspect the compiled CSS rather than trusting the source
+  intent. The cheaper pattern is: pick one variant axis (screen
+  width OR interaction capability), not both.
+- **Use `@media (hover: hover/none)` rather than `md:` for
+  desktop-vs-touch chrome behaviour.** Hover capability is what we
+  actually mean; screen width is a proxy that breaks on hybrid
+  devices (touch laptops, iPads with cursors).
+- **Verify count queries with a direct DB query when the rendered
+  number seems wrong.** Single `wrangler d1 execute --remote
+  --command "SELECT COUNT(*) FROM cities WHERE country_id = ..."`
+  proves the issue is at the query layer, not in the template.
+
+---
+
+### Session: Fix — lightbox arrows too dim by default (24 May 2026, 09:25)
+
+**Context**: After the previous fix made arrows visible on hover,
+Steve flagged that they were still effectively invisible until you
+*knew* to mouse over the edges. Discoverability issue rather than
+a defect — the "invisible until hover" pattern (Lightroom-style)
+suits contemplative viewing but fails new visitors who don't know
+the arrows exist.
+
+**Decision**
+
+Switch to the Flickr / 500px pattern: arrows visible at 40% opacity
+by default, brighten to 100% on hover. Always visible, never
+guessing.
+
+Considered and rejected for now:
+
+- **60% opacity default** (Unsplash) — even more visible, but felt
+  too loud against the photo for a portfolio aesthetic.
+- **Auto-fade after 3 seconds of inactivity** (Apple Photos /
+  Lightroom Web) — best UX in principle but adds timer state and
+  mouse-move tracking for a marginal gain over the simpler pattern.
+
+**Fix in `src/components/Lightbox.astro`**: replaced
+`opacity-0 hover:opacity-100` with `opacity-40 hover:opacity-100`
+on both prev and next buttons. Single-class change; boundary-hint
+logic and touch override unaffected.
+
+**Verified**
+
+- ✅ Arrows visible at ~40% opacity from the moment the lightbox
+  opens — no hover needed
+- ✅ Hover brings them to 100%
+- ✅ At first photo: left arrow drops to ~30% (boundary hint), hover
+  doesn't brighten it (pointer-events-none holds)
+- ✅ At last photo: mirror of the above on the right arrow
+- ✅ Touch unchanged: 100% by default, 30% at boundaries
+
+**Lesson**
+
+- **Discoverability beats minimalism for any navigation chrome a
+  visitor needs to discover.** "Invisible until hover" is a great
+  pattern for *advanced* affordances visitors already know exist
+  (e.g. an edit menu in an app you use daily). For primary
+  navigation in a viewer your visitors use once, the chrome needs
+  to declare itself. Always-visible-at-40% is the well-trodden
+  pattern (Flickr, 500px) and worth the small loss in minimalism.
 
 ---
 
