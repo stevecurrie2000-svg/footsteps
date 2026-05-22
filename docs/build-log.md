@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 22 May 2026, 21:00
+**Last updated**: 22 May 2026, 21:30
 
 | Item | State |
 |---|---|
@@ -24,7 +24,7 @@ boundaries.
 | Phase 4 Slice 5 — `/admin/countries` management | ✅ Done |
 | Phase 5 — Private section + Access | ⏳ Code + Access apps live, verification walkthrough pending |
 | Phase 6 — Polish | ⏳ Not started |
-| Next immediate task | Run Phase 5 verification walkthrough (all infrastructure in place; real-world test with Lorraine/Mia/Alex still to do) |
+| Next immediate task | Continue Phase 5 verification (upload thumbnail fix shipped 22 May 2026) |
 
 ---
 
@@ -1715,6 +1715,61 @@ the policy saved when it didn't.
 
 ---
 
+### Session: Fix: auto-set private thumbnail for existing-country uploads (22 May 2026, 21:30)
+
+**Context**: Bug surfaced during Phase 5 verification walkthrough.
+A private Pixel 9 Pro Hunter Valley shot was uploaded to Australia
+(existing country, new city Cessnock). Photo landed in D1 and R2
+correctly, Cessnock was auto-created, the photo rendered on
+`/private/countries/australia` — but the `/private` country grid
+showed Australia with no thumbnail.
+
+**Diagnosis**
+
+The existing-country thumbnail block in `src/pages/api/admin/upload.ts`
+only touched `public_thumbnail_photo_id`:
+
+```ts
+// Before (bug):
+...(isPublic ? [
+  env.DB.prepare(
+    `UPDATE countries SET public_thumbnail_photo_id = ?1 WHERE id = ?2 AND public_thumbnail_photo_id IS NULL`
+  ).bind(id, countryId),
+] : []),
+```
+
+The `!isPublic` arm was an empty spread — no UPDATE fired for private
+photos to existing countries. The Phase 5 rename
+(`family_thumbnail_photo_id` → `private_thumbnail_photo_id`)
+correctly updated the new-country branch (which runs unconditionally
+for `isNewCountry`) but missed this existing-country branch because
+they live in different conditional arms of the same function.
+
+**Fix shipped**
+
+Converted the empty else arm to a symmetric private UPDATE:
+
+```ts
+// After (fix):
+...(isPublic ? [
+  env.DB.prepare(
+    `UPDATE countries SET public_thumbnail_photo_id = ?1 WHERE id = ?2 AND public_thumbnail_photo_id IS NULL`
+  ).bind(id, countryId),
+] : [
+  env.DB.prepare(
+    `UPDATE countries SET private_thumbnail_photo_id = ?1 WHERE id = ?2 AND private_thumbnail_photo_id IS NULL`
+  ).bind(id, countryId),
+]),
+```
+
+Both branches fire conditionally on `is_public`, both guarded by
+`IS NULL`. Mutually exclusive — every photo has exactly one audience.
+New-country branch unchanged.
+
+`npm run build` passed clean. No new TypeScript errors.
+
+---
+
 ## Lessons learned
 
 **Documentation**
@@ -1789,6 +1844,12 @@ the policy saved when it didn't.
   "Not found" with no chrome means Access never fired — the route is
   ungated and the Worker's own auth check is responding. This
   distinction makes debugging Access misconfigurations much faster.
+
+- **When renaming a schema column, audit every code path that touches
+  the old column name, not just the most obvious one.** The Phase 5
+  rename caught the new-country thumbnail branch but missed the
+  existing-country branch because they live in different conditional
+  arms of the same function.
 
 **Cloudflare Access dashboard (UI refresh — May 2026)**
 

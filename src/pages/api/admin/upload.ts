@@ -233,8 +233,8 @@ export const POST: APIRoute = async ({ request }) => {
         fullKey,
         originalKey,
       ),
-      // New country: always set private thumbnail; public photos also set public thumbnail.
-      // Existing country: only set public thumbnail when null and photo is public.
+      // New country: always set private thumbnail (first private upload wins).
+      // All uploads: set the matching audience thumbnail when null.
       ...(isNewCountry ? [
         env.DB.prepare(
           `UPDATE countries SET private_thumbnail_photo_id = ?1 WHERE id = ?2 AND private_thumbnail_photo_id IS NULL`
@@ -244,7 +244,11 @@ export const POST: APIRoute = async ({ request }) => {
         env.DB.prepare(
           `UPDATE countries SET public_thumbnail_photo_id = ?1 WHERE id = ?2 AND public_thumbnail_photo_id IS NULL`
         ).bind(id, countryId),
-      ] : []),
+      ] : [
+        env.DB.prepare(
+          `UPDATE countries SET private_thumbnail_photo_id = ?1 WHERE id = ?2 AND private_thumbnail_photo_id IS NULL`
+        ).bind(id, countryId),
+      ]),
     ];
     await env.DB.batch(batchStmts);
   } catch (err) {
