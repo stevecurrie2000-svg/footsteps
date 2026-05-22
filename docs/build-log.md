@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 24 May 2026, 17:30
+**Last updated**: 24 May 2026, 18:00
 
 | Item | State |
 |---|---|
@@ -25,9 +25,9 @@ boundaries.
 | Phase 5 — Private section + Access | ✅ Done (real-world test with Lorraine/Mia/Alex pending) |
 | Phase 6 Slice 1 — `/admin/photos` page | ✅ Done |
 | Phase 6 Slice 2 — Lightbox | ✅ Done |
-| Phase 6 Slice 3 — Lazy loading + custom 404 | ✅ Done |
+| Phase 6 Slice 3 — Lazy loading + dimensions + custom 404 | ✅ Done |
 | Phase 6 — Polish (remaining) | ⏳ In progress — analytics, JWT validation |
-| Next immediate task | Phase 6 remaining items, or Phase 5 real-world test with Lorraine/Mia/Alex |
+| Next immediate task | Phase 6 remaining (analytics, JWT validation) or Phase 5 real-world test with Lorraine/Mia/Alex |
 
 ---
 
@@ -2213,111 +2213,130 @@ logic and touch override unaffected.
 
 ---
 
-### Session: Phase 6 Slice 3 — lazy loading + custom 404 (24 May 2026, 17:30)
+### Session: Phase 6 Slice 3 — lazy loading + dimensions + custom 404 (24 May 2026, 18:00)
 
-**Context**: Third slice of Phase 6. Two pieces of work combined: native lazy
-loading + image dimensions for layout-shift-free image loading on country
-pages, and a custom on-brand 404 page replacing the default Worker 404
-site-wide.
+**Context**: Third slice of Phase 6. Two pieces of work combined into a
+single commit: native lazy loading + image dimensions for layout-shift-
+free image loading on country pages, and a custom on-brand 404 page
+replacing the default Worker 404 site-wide.
 
 **What was built**
 
-- **Migration 0004**: adds `width INTEGER` and `height INTEGER` to `photos`,
-  both nullable. Applied local + remote, PRAGMA verified.
+- **Migration 0004** (`migrations/0004_add_photo_dimensions.sql`): adds
+  `width INTEGER` and `height INTEGER` columns to `photos`, both
+  nullable. Applied local + remote. PRAGMA verified.
 - **Upload pipeline** (`src/pages/admin/index.astro` +
-  `src/pages/api/admin/upload.ts`): client-side captures the source image's
-  natural dimensions before canvas resize; POSTed in FormData and persisted
-  to D1 alongside the existing photo metadata. Defensive bounds check on
-  server side (reject negative or absurd values).
+  `src/pages/api/admin/upload.ts`): client-side captures the source
+  image's natural dimensions via `img.naturalWidth` /
+  `img.naturalHeight` before the canvas resize. POSTed to the upload
+  endpoint as FormData fields alongside the existing photo metadata.
+  Server-side validates via `/^\d+$/` regex and a sanity bound
+  (≤100000) before persisting. Both fields default to null if missing
+  or invalid.
 - **Lazy loading + dimensions across four templates**:
-  - `src/pages/index.astro` — homepage country grid: `loading="eager"` on
-    all country thumbnails (small grid, all above fold), dimensions when
-    available.
+  - `src/pages/index.astro` — homepage country grid: `loading="eager"`
+    on all country thumbnails (small grid, all above fold),
+    `decoding="async"`, `width`/`height` when available on the joined
+    photo row.
   - `src/pages/countries/[slug].astro` and
     `src/pages/private/countries/[slug].astro` — first 8 photos in DOM
     order `loading="eager"`, rest `loading="lazy"`. `decoding="async"`
     everywhere. `width`/`height` attributes conditionally emitted only
-    when both dimensions are non-null.
+    when both dimensions are non-null (graceful fallback for pre-
+    migration photos).
   - `src/pages/admin/photos/index.astro` — contact-sheet grid: first 8
     photos `eager`, rest `lazy`. Infinite-scroll loaded photos always
-    `lazy`. Module-level index counter so eager/lazy split is correct
-    across batches.
+    `lazy`. Module-level index counter ensures the eager/lazy split is
+    correct across batches.
   - `src/pages/api/admin/photos/list.ts` — SELECT extended to include
-    `width` and `height`.
-- **Custom 404** (`src/pages/404.astro`): "Off the path" headline +
-  "This trail leads nowhere — but plenty more do." + "Return home" link.
-  Playfair Display for the headline, dark theme consistent with the rest
-  of the site.
-- **`src/lib/private-auth.ts`**: unauthenticated requests to `/private` and
-  `/private/countries/[slug]` now land on the custom 404 page (status 404)
-  rather than the previous plain-text "Not found". Preserves the
-  "section's existence is hidden" property — an unauthenticated visitor
-  sees the same page as someone hitting any other missing URL.
+    `width` and `height` for the modal preview and grid.
+- **Custom 404** (`src/pages/404.astro`): "Off the path" headline,
+  "This trail leads nowhere — but plenty more do." subhead, and a
+  muted "Return home" link. Playfair Display for the headline; dark
+  theme consistent with the rest of the site. Reuses BaseLayout so the
+  footer Private link is present.
+- **`src/lib/private-auth.ts`**: unauthenticated requests to `/private`
+  and `/private/countries/[slug]` now land on the custom 404 page
+  (status 404) rather than the previous plain-text "Not found".
+  Preserves the "section's existence is hidden" property — an
+  unauthenticated visitor sees the same page as someone hitting any
+  other missing URL.
 
 **Design decisions** (locked in claude.ai before the build)
 
-- Native lazy loading + dimension attributes only — no full Astro
-  `<Image>` migration. The `<Image>` component assumes local files at
-  build time; our photos live in R2 and are served via the `/i/[key]`
-  Worker route. The native approach captures the meaningful performance
-  win (deferred off-screen image requests) without building a custom
-  transforming endpoint.
-- Source dimensions (the camera's natural size), not resized variant
-  dimensions, because aspect ratio is invariant under proportional
-  scaling and the browser only uses the ratio.
-- Graceful fallback for pre-migration photos: omit `width`/`height`
-  attributes when null. Legacy photos shift slightly on load; new
-  uploads don't. No backfill script — pre-Slice-3 photos will age out
-  naturally as Canon R7 batches arrive.
-- First 8 photos eager, rest lazy, on country pages and admin grid;
-  homepage country grid all eager (small, above fold). Standard pattern
-  for image-heavy sites.
-- 404 thematic / on-brand (not minimal, not photo-led). Photo-led
-  deferred until photo library is deeper.
-- Custom 404 covers `/private` 404s too — preserves the "private section
-  doesn't appear to exist" property.
+1. **Native lazy loading + dimension attributes only**, no full Astro
+   `<Image>` migration. The `<Image>` component assumes local files at
+   build time; our photos live in R2 and are served via the `/i/[key]`
+   Worker route. The native approach captures the meaningful
+   performance win (deferred off-screen image requests) without
+   building a custom transforming endpoint. Full `<Image>` revisitable
+   in Phase 7+ if traffic justifies it.
+2. **Source dimensions, not resized variant dimensions.** Aspect ratio
+   is invariant under proportional scaling, and the browser only uses
+   the ratio. Storing the source dimensions is the canonical choice
+   and survives any future change to the resize ladder.
+3. **Graceful fallback for pre-migration photos**: omit `width` and
+   `height` attributes when null. Legacy photos shift slightly on
+   load; new uploads don't. No backfill script — pre-Slice-3 photos
+   age out naturally as Canon R7 batches arrive.
+4. **First 8 photos eager, rest lazy** on country pages and admin
+   grid; homepage country grid all eager (small, above fold). Standard
+   pattern for image-heavy sites.
+5. **404 thematic / on-brand** ("Off the path"), not minimal or
+   photo-led. Photo-led deferred until photo library is deeper and
+   selection logic is worth designing.
+6. **Custom 404 covers `/private` 404s too** — preserves the "private
+   section doesn't appear to exist" property when an unauthenticated
+   visitor hits the URL directly.
 
-**Verified locally**: `npm run build` clean, no TypeScript errors.
+**Verified in production**
 
-**Verified in production after deploy**:
-
-- ✅ DevTools Network tab shows photos below the fold deferred until
-  scroll on `/countries/united-kingdom`
-- ✅ No CLS (Cumulative Layout Shift) on newly-uploaded photos (post-
-  migration uploads with width/height set)
-- ✅ Pre-migration photos still render, just with slight layout shift —
-  acceptable per design decision
-- ✅ Nonsense URL (`/banana-flavoured-nonsense`) renders "Off the path"
-  404 page with status 404
+- ✅ `/banana-flavoured-nonsense` renders "Off the path" 404, status 404
 - ✅ Unauthenticated incognito hit on `/private` renders the same 404
-  page; status 404
-- ✅ Unauthenticated incognito hit on `/private/countries/united-kingdom`
-  renders the same 404 page; status 404
-- ✅ Authenticated `/private` still works as expected
-- ✅ Upload of a new photo via `/admin` persists `width` and `height` to
-  D1 (verified via wrangler d1 execute)
-- ✅ The new photo's tile in `/countries/[slug]` and `/admin/photos`
-  renders with `width` and `height` attributes set (DevTools Elements
-  panel)
+  page, status 404 (the Worker's `requirePrivateViewer` fires before
+  Cloudflare Access intercepts, so the section's existence remains
+  hidden)
+- ✅ DevTools Network tab on `/countries/united-kingdom`: photo
+  requests fire on scroll as photos come into view
+- ✅ Pre-migration London photo: `<img>` has no `width`/`height` attrs
+  (graceful fallback)
+- ✅ New post-migration upload: `width` and `height` populated in D1
+  and present on the rendered `<img>` element
+- ✅ GitHub Actions deploy green
+- ✅ All 10 brief verification checkpoints passed
+
+**Lessons learned this session**
+
+- **`<Image>` is the wrong tool when your images live behind a Worker
+  proxy.** Astro's `<Image>` is build-time-oriented and assumes local
+  files; making it work with R2-backed dynamic URLs requires building
+  a custom endpoint that doesn't earn its keep at current scale.
+  Native `loading="lazy"` + explicit dimensions captures ~80% of the
+  user-visible benefit with ~5% of the work.
+- **The "store the source dimensions, not the variant dimensions"
+  pattern is robust to future resize-ladder changes.** Browsers only
+  consume the aspect ratio from `width`/`height` attributes, so any
+  set of dimensions proportional to the source works. Storing the
+  source numbers means future template or resize changes don't
+  invalidate the data.
+- **Don't backfill data when natural turnover will handle it.** With
+  ~3 pre-migration photos and Canon R7 batches imminent, a backfill
+  script would be one-time code for a problem that solves itself.
+  Worth the conscious decision to skip.
+- **The `{...(cond ? { ... } : {})}` spread pattern is the cleanest
+  way to conditionally emit JSX/Astro attributes.** Avoids the
+  `attr={value || undefined}` pattern which emits empty attributes on
+  some renderers.
 
 **Carries remaining**
 
-- Phase 6: Cloudflare Analytics, JWT signature validation
-- Phase 5 real-world test with Lorraine/Mia/Alex
-- Phase 7 design session (map view)
+- **Phase 6 remaining**: Cloudflare Analytics, JWT signature validation
+- **Phase 5 real-world test** with Lorraine, Mia, Alex
+- **Phase 7 design session** (public homepage map view)
 - `infrastructure.md` doc — still not created
 - `footsteps-upload-script` API token — still pending revocation
+- `docs/footsteps_architecture_post_phase_3.svg` — still untracked
 - Node 20 deprecation on action wrappers — bump `@v5` when stable
-
-**Lesson**
-
-- **Discoverability beats minimalism for any navigation chrome a
-  visitor needs to discover.** "Invisible until hover" is a great
-  pattern for *advanced* affordances visitors already know exist
-  (e.g. an edit menu in an app you use daily). For primary
-  navigation in a viewer your visitors use once, the chrome needs
-  to declare itself. Always-visible-at-40% is the well-trodden
-  pattern (Flickr, 500px) and worth the small loss in minimalism.
 
 ---
 
