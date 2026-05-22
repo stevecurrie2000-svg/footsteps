@@ -58,7 +58,7 @@ const { email } = auth;
 
 <script>
   import exifr from "exifr";
-  import { reverseGeocode, slugify, type GeocodedLocation } from "../../lib/nominatim";
+  import { reverseGeocode, slugify, type GeocodeResult } from "../../lib/nominatim";
 
   // ── Types ──────────────────────────────────────────────────────────────────
   interface ExifResult {
@@ -151,27 +151,30 @@ const { email } = auth;
 
     geocodeQueue.push(async () => {
       if (!rows.has(rowId)) return;
-      try {
-        const geo = await reverseGeocode(gpsLat, gpsLon);
-        applyGeocodeToRow(rowId, geo);
-      } catch {
-        showToast(`Couldn't auto-detect location for ${filename} — pick manually`);
+      const result = await reverseGeocode(gpsLat, gpsLon);
+      if (result.status === 'ok') {
+        applyGeocodeToRow(rowId, result);
+      } else if (result.status === 'partial') {
+        applyPartialGeocodeToRow(rowId, result);
+        showToast(`Found country for ${filename} but no city — please pick the city`);
+      } else {
+        showToast(`Couldn't reach geocoding service for ${filename} — pick country and city manually`);
       }
     });
     drainGeocodeQueue();
   }
 
   // ── Geocode application ────────────────────────────────────────────────────
-  function applyGeocodeToRow(rowId: string, geo: GeocodedLocation) {
+  function applyGeocodeToRow(rowId: string, geo: Extract<GeocodeResult, { status: 'ok' }>) {
     const state = rows.get(rowId);
     const tr    = rowElements.get(rowId);
     if (!state || !tr) return;
 
-    const countrySlug = slugify(geo.country);
-    const citySlug    = slugify(geo.city);
+    const countrySlug = slugify(geo.countryName);
+    const citySlug    = geo.citySlug;
 
-    state.geocodedCountryName = geo.country;
-    state.geocodedCityName    = geo.city;
+    state.geocodedCountryName = geo.countryName;
+    state.geocodedCityName    = geo.cityName;
     state.geocodedCountrySlug = countrySlug;
     state.geocodedCitySlug    = citySlug;
 
@@ -187,11 +190,11 @@ const { email } = auth;
     if (existingCountry) {
       countrySelect.value = countrySlug;
       state.countrySlug   = countrySlug;
-      void loadCitiesForRow(rowId, countrySlug, geo.city, citySlug);
+      void loadCitiesForRow(rowId, countrySlug, geo.cityName, citySlug);
     } else {
       const opt       = document.createElement("option");
       opt.value       = `__new__:${countrySlug}`;
-      opt.textContent = `${geo.country} (new)`;
+      opt.textContent = `${geo.countryName} (new)`;
       countrySelect.appendChild(opt);
       countrySelect.value = `__new__:${countrySlug}`;
       state.countrySlug   = `__new__:${countrySlug}`;
@@ -200,11 +203,45 @@ const { email } = auth;
       citySelect.disabled  = false;
       const cityOpt        = document.createElement("option");
       cityOpt.value        = `__new__:${citySlug}`;
-      cityOpt.textContent  = `${geo.city} (new)`;
+      cityOpt.textContent  = `${geo.cityName} (new)`;
       citySelect.appendChild(cityOpt);
       citySelect.value = `__new__:${citySlug}`;
       state.citySlug   = `__new__:${citySlug}`;
 
+      updateRowValidation(rowId);
+      updateButtonState();
+    }
+  }
+
+  function applyPartialGeocodeToRow(rowId: string, geo: Extract<GeocodeResult, { status: 'partial' }>) {
+    const state = rows.get(rowId);
+    const tr    = rowElements.get(rowId);
+    if (!state || !tr) return;
+
+    const countrySlug = slugify(geo.countryName);
+    state.geocodedCountryName = geo.countryName;
+    state.geocodedCountrySlug = countrySlug;
+
+    const countrySelect = tr.querySelector<HTMLSelectElement>(`#country-${rowId}`);
+    if (!countrySelect) return;
+
+    Array.from(countrySelect.options)
+      .filter(o => o.value.startsWith("__new__:"))
+      .forEach(o => o.remove());
+
+    const existingCountry = Array.from(countrySelect.options).find(o => o.value === countrySlug);
+    if (existingCountry) {
+      countrySelect.value = countrySlug;
+      state.countrySlug   = countrySlug;
+      // Trigger city dropdown load without pre-selecting any city
+      countrySelect.dispatchEvent(new Event('change'));
+    } else {
+      const opt       = document.createElement("option");
+      opt.value       = `__new__:${countrySlug}`;
+      opt.textContent = `${geo.countryName} (new)`;
+      countrySelect.appendChild(opt);
+      countrySelect.value = `__new__:${countrySlug}`;
+      state.countrySlug   = `__new__:${countrySlug}`;
       updateRowValidation(rowId);
       updateButtonState();
     }

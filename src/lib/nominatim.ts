@@ -1,20 +1,32 @@
-export interface GeocodedLocation {
-  country: string;
-  city: string;
-  country_code: string; // ISO 3166-1 alpha-2; future-proof, not stored in Slice 3
-}
+export type GeocodeResult =
+  | {
+      status: 'ok';
+      countryName: string;
+      countryCode: string;
+      citySlug: string;
+      cityName: string;
+    }
+  | {
+      status: 'partial';
+      countryName: string;
+      countryCode: string;
+    }
+  | {
+      status: 'error';
+      reason: 'timeout' | 'network' | 'no_country';
+    };
 
 export function slugify(name: string): string {
   return name
     .normalize("NFD")               // separate accents from base letters
     .replace(/\p{M}/gu, "")         // strip combining accent marks
     .toLowerCase()
-    .replace(/['’]/g, "")                // remove straight + curly apostrophes
+    .replace(/['']/g, "")                // remove straight + curly apostrophes
     .replace(/[^a-z0-9]+/g, "-")             // non-alphanumeric → hyphen
     .replace(/^-+|-+$/g, "");                // trim leading/trailing hyphens
 }
 
-export async function reverseGeocode(lat: number, lon: number): Promise<GeocodedLocation> {
+export async function reverseGeocode(lat: number, lon: number): Promise<GeocodeResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
 
@@ -26,11 +38,15 @@ export async function reverseGeocode(lat: number, lon: number): Promise<Geocoded
         `&email=stevecurrie2000@gmail.com`,
       { signal: controller.signal }
     );
-  } finally {
     clearTimeout(timer);
+  } catch {
+    clearTimeout(timer);
+    return controller.signal.aborted
+      ? { status: 'error', reason: 'timeout' }
+      : { status: 'error', reason: 'network' };
   }
 
-  if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
+  if (!res.ok) return { status: 'error', reason: 'network' };
 
   const data = await res.json() as {
     address?: {
@@ -39,22 +55,46 @@ export async function reverseGeocode(lat: number, lon: number): Promise<Geocoded
       town?: string;
       village?: string;
       suburb?: string;
+      hamlet?: string;
+      municipality?: string;
+      county?: string;
+      borough?: string;
       country_code?: string;
     };
   };
 
   const addr = data.address;
-  if (!addr) throw new Error("No address in Nominatim response");
+  if (!addr?.country) return { status: 'error', reason: 'no_country' };
 
   const country = addr.country;
-  if (!country) throw new Error("No country in Nominatim response");
+  const countryCode = (addr.country_code ?? "").toUpperCase();
 
-  const city = addr.city ?? addr.town ?? addr.village ?? addr.suburb;
-  if (!city) throw new Error("No city-level place in Nominatim response");
+  const cityName =
+    addr.city ??
+    addr.town ??
+    addr.village ??
+    addr.suburb ??
+    addr.hamlet ??
+    addr.municipality ??
+    addr.county ??
+    addr.borough ??
+    null;
+
+  if (!cityName) {
+    return { status: 'partial', countryName: country, countryCode };
+  }
+
+  // When city is present, prefer suburb if it differs (e.g. Marrickville vs Sydney)
+  const resolvedCityName =
+    addr.city && addr.suburb && addr.suburb.toLowerCase() !== addr.city.toLowerCase()
+      ? addr.suburb
+      : cityName;
 
   return {
-    country,
-    city,
-    country_code: (addr.country_code ?? "").toUpperCase(),
+    status: 'ok',
+    countryName: country,
+    countryCode,
+    cityName: resolvedCityName,
+    citySlug: slugify(resolvedCityName),
   };
 }

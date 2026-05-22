@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 19 May 2026, end of Phase 5 session
+**Last updated**: 22 May 2026, 10:00
 
 | Item | State |
 |---|---|
@@ -19,7 +19,7 @@ boundaries.
 | Phase 3 — Storage & database | ✅ Done |
 | Phase 4 Slice 1 — Admin upload + Access | ✅ Done |
 | Phase 4 Slice 2 — EXIF parsing | ✅ Done |
-| Phase 4 Slice 3 — Nominatim geocoding + auto-create | ✅ Done |
+| Phase 4 Slice 3 — Nominatim geocoding + auto-create | ✅ Done (geocode fix 22 May 2026) |
 | Phase 4 Slice 4 — Per-file review table | ✅ Done |
 | Phase 4 Slice 5 — `/admin/countries` management | ✅ Done |
 | Phase 5 — Private section + Access | ⏳ Code deployed, verification partially done |
@@ -1519,6 +1519,54 @@ verification.
 
 ---
 
+### Session: Geocode fix — partial wins + suburb preference (22 May 2026)
+
+**Context**: Follow-up triggered by a Pixel 9 Pro XL upload test on 21 May 2026. A photo with valid EXIF GPS — "📍 GPS" pill rendered correctly in the `/admin` review table — failed to auto-fill country and city. The standard "Couldn't auto-detect location" error toast fired.
+
+**Network-side context**: An earlier observation of "TLS error on /private/*" during a Ramsay Health guest WiFi session was network interception (corporate WiFi MITM), NOT a site bug. Both Nominatim and footsteps.gallery responded normally on a phone hotspot.
+
+**Root cause — proven via direct Nominatim queries**
+
+Five Sydney-region coordinate sets queried directly against the Nominatim API before touching any code:
+
+| Location | Lat, Lon | city | town | village | suburb | Other useful fields |
+|---|---|---|---|---|---|---|
+| Sydney CBD | -33.8688, 151.2093 | Sydney | — | — | — | — |
+| Bondi Beach | -33.8915, 151.2767 | Sydney | — | — | — | — |
+| Marrickville | -33.9094, 151.1556 | Sydney | — | — | Marrickville | — |
+| Blue Mountains (Katoomba) | — | Sydney | — | — | — | — |
+| Royal National Park | -34.1500, 151.0500 | **null** | **null** | **null** | **null** | borough, municipality, county, state, country all populated |
+
+Royal National Park returns null for `city`, `town`, `village`, and `suburb` — the area is tagged by `borough`, `municipality`, and `county` in Nominatim's data model. The Slice 3 resolution chain (`city → town → village → suburb`) treated all-null as total geocode failure and discarded the country information Nominatim *did* return.
+
+**Secondary bug**: Marrickville returns `city=Sydney, suburb=Marrickville`. The old chain picked `city` first, auto-filling "Sydney" — wrong, since Marrickville is its own suburb under the D1 data.
+
+**What shipped**
+
+- `src/lib/nominatim.ts`:
+  - Replaced `GeocodedLocation` interface with `GeocodeResult` discriminated union (`ok` / `partial` / `error`).
+  - Extended resolution chain to `city → town → village → suburb → hamlet → municipality → county → borough`.
+  - Suburb-preference rule: if `suburb` is present, `city` was picked, and `suburb !== city` (case-insensitive), swap to `suburb` (fixes Marrickville-style cases).
+  - Country present, city null → `{status: 'partial', countryName, countryCode}`.
+  - Network/timeout/no-country → `{status: 'error', reason: ...}`.
+  - Happy path → `{status: 'ok'}` with pre-computed `citySlug`.
+
+- `src/pages/admin/index.astro`:
+  - `enqueueGeocode` switches on result status; no longer uses try/catch (errors are now values).
+  - `applyGeocodeToRow` updated for new field names (`countryName`, `cityName`, `citySlug`).
+  - New `applyPartialGeocodeToRow` — fills country dropdown, triggers city load, leaves city unselected.
+  - Three toast messages: silent on `ok`; `"Found country for [filename] but no city — please pick the city"` on `partial`; `"Couldn't reach geocoding service for [filename] — pick country and city manually"` on `error`.
+
+**Backwards-compatible**: Sydney CBD, Bondi, Tower Bridge coords still auto-fill both country and city with no toast. No new dependencies.
+
+**Lessons from this session**
+
+- **Diagnose third-party API behaviour with live queries before changing local code.** Five direct Nominatim queries proved the data shape variability; speculating from the failing upload alone would have produced the wrong fix.
+- **Partial wins are wins.** When integrating with external data sources, treat fields independently — don't collapse the whole result to null just because one optional field is missing.
+- **Suburb vs city is not a hierarchy in Nominatim.** Both fields can be populated simultaneously; which one is the "right" answer depends on whether they differ, not on a fixed precedence.
+
+---
+
 ## Lessons learned
 
 **Documentation**
@@ -1593,6 +1641,12 @@ verification.
   "Not found" with no chrome means Access never fired — the route is
   ungated and the Worker's own auth check is responding. This
   distinction makes debugging Access misconfigurations much faster.
+
+**Third-party API integration**
+
+- **Diagnose third-party API behaviour with live queries before changing local code.** Five direct Nominatim queries against real coordinates proved the data shape variability; speculating from a failing upload alone would have produced the wrong fix.
+- **Partial wins are wins.** When integrating with external data sources, treat fields independently — don't collapse the whole result to null just because one optional field is missing. Return a discriminated union so callers can act on whatever was resolved.
+- **Suburb vs city is not a hierarchy in Nominatim.** Both fields can be populated simultaneously; which one is the "right" answer depends on whether they differ (Marrickville vs Sydney), not on a fixed field precedence.
 
 **Security / credentials**
 
