@@ -1,0 +1,301 @@
+---
+interface Photo {
+  id: string;
+  r2_key_medium: string;
+  r2_key_full: string;
+  city_name: string;
+}
+
+interface Props {
+  photos: Photo[];
+  mode: 'public' | 'private' | 'admin';
+}
+
+const { photos, mode } = Astro.props;
+---
+
+<div
+  id="lightbox"
+  class="fixed inset-0 z-50 hidden bg-black/95 select-none"
+  data-mode={mode}
+>
+  <!-- Close button -->
+  <button
+    id="lightbox-close"
+    class="absolute top-4 right-4 z-10 text-foreground/60 hover:text-foreground text-3xl leading-none p-2"
+    aria-label="Close"
+  >×</button>
+
+  <!-- Edit icon (admin only) -->
+  {mode === 'admin' && (
+    <button
+      id="lightbox-edit"
+      class="absolute top-4 left-4 z-10 text-foreground/60 hover:text-foreground text-xl p-2"
+      aria-label="Edit photo"
+    >✎</button>
+  )}
+
+  <!-- Prev arrow -->
+  <button
+    id="lightbox-prev"
+    class="absolute left-4 top-1/2 -translate-y-1/2 z-10 text-foreground/60 hover:text-foreground text-4xl p-4 transition-opacity md:opacity-0 md:hover:opacity-100"
+    aria-label="Previous photo"
+  >‹</button>
+
+  <!-- Next arrow -->
+  <button
+    id="lightbox-next"
+    class="absolute right-4 top-1/2 -translate-y-1/2 z-10 text-foreground/60 hover:text-foreground text-4xl p-4 transition-opacity md:opacity-0 md:hover:opacity-100"
+    aria-label="Next photo"
+  >›</button>
+
+  <!-- Image container -->
+  <div class="absolute inset-0 flex items-center justify-center p-8 md:p-16">
+    <img
+      id="lightbox-img"
+      src=""
+      alt=""
+      class="max-h-full max-w-full object-contain"
+      draggable="false"
+      oncontextmenu="return false;"
+    />
+  </div>
+
+  <!-- City label -->
+  <div
+    id="lightbox-city"
+    class="absolute bottom-6 left-1/2 -translate-x-1/2 text-foreground/60 text-xs uppercase tracking-widest"
+  ></div>
+</div>
+
+<script define:vars={{ photos, mode }}>
+  (function () {
+    const lightbox = document.getElementById('lightbox');
+    if (!lightbox) return;
+
+    const img = document.getElementById('lightbox-img');
+    const cityLabel = document.getElementById('lightbox-city');
+    const closeBtn = document.getElementById('lightbox-close');
+    const prevBtn = document.getElementById('lightbox-prev');
+    const nextBtn = document.getElementById('lightbox-next');
+    const editBtn = document.getElementById('lightbox-edit');
+
+    // Mutable — updated via window.lightboxRefresh for admin page
+    let _photos = Array.isArray(photos) ? photos.slice() : [];
+    let currentIndex = -1;
+    let isOpen = false;
+
+    function preload(src) {
+      if (!src) return;
+      const i = new Image();
+      i.src = src;
+    }
+
+    function updateBoundaryHints() {
+      prevBtn.classList.toggle('opacity-30', currentIndex === 0);
+      prevBtn.classList.toggle('pointer-events-none', currentIndex === 0);
+      nextBtn.classList.toggle('opacity-30', currentIndex === _photos.length - 1);
+      nextBtn.classList.toggle('pointer-events-none', currentIndex === _photos.length - 1);
+    }
+
+    function showPhoto(index, pushHistory = true) {
+      if (index < 0 || index >= _photos.length) return;
+      currentIndex = index;
+      const photo = _photos[index];
+
+      // Load medium variant immediately
+      img.src = `/i/${photo.r2_key_medium}`;
+      img.alt = photo.city_name || '';
+      cityLabel.textContent = photo.city_name || '';
+
+      // Silently upgrade to full variant once loaded
+      const full = new Image();
+      full.onload = () => {
+        if (currentIndex === index) {
+          img.src = `/i/${photo.r2_key_full}`;
+        }
+      };
+      full.src = `/i/${photo.r2_key_full}`;
+
+      // Preload adjacent mediums
+      if (index > 0) preload(`/i/${_photos[index - 1].r2_key_medium}`);
+      if (index < _photos.length - 1) preload(`/i/${_photos[index + 1].r2_key_medium}`);
+
+      updateBoundaryHints();
+
+      if (pushHistory) {
+        const newHash = `#photo=${photo.id}`;
+        if (window.location.hash !== newHash) {
+          if (isOpen) {
+            // Navigating within open lightbox — replace rather than push
+            history.replaceState({ lightbox: true }, '', newHash);
+          } else {
+            // Initial open — push so back button closes the lightbox
+            history.pushState({ lightbox: true }, '', newHash);
+          }
+        }
+      }
+    }
+
+    function openAt(index) {
+      if (index < 0 || index >= _photos.length) return;
+      lightbox.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+      // Call showPhoto before setting isOpen so it sees isOpen=false and uses pushState
+      showPhoto(index, true);
+      isOpen = true;
+    }
+
+    function close() {
+      lightbox.classList.add('hidden');
+      document.body.style.overflow = '';
+      isOpen = false;
+      currentIndex = -1;
+      if (history.state?.lightbox === true) {
+        history.back();
+      } else if (window.location.hash.startsWith('#photo=')) {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+    }
+
+    function next() {
+      if (currentIndex < _photos.length - 1) showPhoto(currentIndex + 1);
+    }
+
+    function prev() {
+      if (currentIndex > 0) showPhoto(currentIndex - 1);
+    }
+
+    // Bind click handlers to any unbound [data-lightbox-id] elements
+    function bindClickHandlers() {
+      document.querySelectorAll('[data-lightbox-id]:not([data-lb-bound])').forEach((el) => {
+        el.dataset.lbBound = '1';
+        el.addEventListener('click', (e) => {
+          e.preventDefault();
+          const id = el.getAttribute('data-lightbox-id');
+          // _photos is captured by reference — always reflects latest array
+          const index = _photos.findIndex((p) => p.id === id);
+          if (index >= 0) openAt(index);
+        });
+        el.style.cursor = 'pointer';
+      });
+    }
+
+    // Called by admin page after each grid render to sync the navigable set
+    window.lightboxRefresh = function (newPhotos) {
+      if (isOpen) {
+        // Silently close without touching history
+        lightbox.classList.add('hidden');
+        document.body.style.overflow = '';
+        isOpen = false;
+        currentIndex = -1;
+        if (window.location.hash.startsWith('#photo=')) {
+          history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+      }
+      _photos = Array.isArray(newPhotos) ? newPhotos.slice() : [];
+      bindClickHandlers();
+    };
+
+    // Initial bind
+    bindClickHandlers();
+
+    // Chrome buttons
+    closeBtn.addEventListener('click', close);
+    prevBtn.addEventListener('click', prev);
+    nextBtn.addEventListener('click', next);
+
+    // Edit button (admin mode) — dispatches event for the page to open its edit modal
+    if (editBtn) {
+      editBtn.addEventListener('click', () => {
+        const photo = _photos[currentIndex];
+        if (photo) {
+          window.dispatchEvent(new CustomEvent('lightbox:edit', { detail: { photoId: photo.id } }));
+        }
+      });
+    }
+
+    // Keyboard
+    document.addEventListener('keydown', (e) => {
+      if (!isOpen) return;
+      if (e.key === 'Escape') {
+        // Yield to any open dialog (e.g. admin edit modal)
+        const openDialog = document.querySelector('[role="dialog"]:not(.hidden)');
+        if (openDialog) return;
+        close();
+      } else if (e.key === 'ArrowLeft') {
+        prev();
+      } else if (e.key === 'ArrowRight') {
+        next();
+      }
+    });
+
+    // Touch / swipe
+    let touchStartX = 0;
+    let touchStartY = 0;
+    lightbox.addEventListener('touchstart', (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+      touchStartY = e.changedTouches[0].screenY;
+    }, { passive: true });
+    lightbox.addEventListener('touchend', (e) => {
+      const touchEndX = e.changedTouches[0].screenX;
+      const touchEndY = e.changedTouches[0].screenY;
+      const deltaX = touchEndX - touchStartX;
+      const deltaY = touchEndY - touchStartY;
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+      if (absY > absX && deltaY > 80) {
+        close();
+      } else if (absX > 50 && absX > absY) {
+        if (deltaX < 0) next();
+        else prev();
+      }
+    }, { passive: true });
+
+    // History navigation
+    window.addEventListener('popstate', (e) => {
+      if (isOpen && e.state?.lightbox !== true) {
+        // Back button pressed — close without re-calling history.back
+        lightbox.classList.add('hidden');
+        document.body.style.overflow = '';
+        isOpen = false;
+        currentIndex = -1;
+      } else if (!isOpen && e.state?.lightbox === true) {
+        // Forward into a lightbox state — reopen from hash
+        openFromHash(false);
+      }
+    });
+
+    function openFromHash(pushHistory) {
+      const hash = window.location.hash;
+      const match = hash.match(/^#photo=(.+)$/);
+      if (!match) return;
+      const id = match[1];
+      const index = _photos.findIndex((p) => p.id === id);
+      if (index >= 0) {
+        if (isOpen) {
+          showPhoto(index, pushHistory);
+        } else {
+          lightbox.classList.remove('hidden');
+          document.body.style.overflow = 'hidden';
+          showPhoto(index, pushHistory);
+          isOpen = true;
+        }
+      }
+    }
+
+    // On page load, open from hash if present
+    if (window.location.hash.startsWith('#photo=')) {
+      openFromHash(false);
+    }
+  })();
+</script>
+
+<style>
+  /* Force arrows visible on touch devices where hover never fires */
+  @media (hover: none) {
+    #lightbox-prev, #lightbox-next {
+      opacity: 1 !important;
+    }
+  }
+</style>

@@ -8,6 +8,7 @@ type PhotoRow = {
   id: string;
   r2_key_thumb: string;
   r2_key_medium: string;
+  r2_key_full: string;
   original_filename: string | null;
   country_slug: string;
   country_name: string;
@@ -68,7 +69,7 @@ export const GET: APIRoute = async ({ request }) => {
 
   const photosStmt = env.DB.prepare(`
     SELECT
-      p.id, p.r2_key_thumb, p.r2_key_medium, p.original_filename,
+      p.id, p.r2_key_thumb, p.r2_key_medium, p.r2_key_full, p.original_filename,
       c.slug AS country_slug, c.name AS country_name,
       ci.id AS city_id, ci.slug AS city_slug, ci.name AS city_name,
       p.is_public, p.capture_date, p.latitude, p.longitude,

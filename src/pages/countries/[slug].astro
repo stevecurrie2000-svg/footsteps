@@ -1,6 +1,7 @@
 ---
 import { env } from "cloudflare:workers";
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import Lightbox from "../../components/Lightbox.astro";
 
 const { slug } = Astro.params;
 
@@ -23,13 +24,13 @@ const { results: cities } = await env.DB
 // Fetch public photos for this country, ordered for a consistent layout
 const { results: photos } = await env.DB
   .prepare(`
-    SELECT id, city_id, r2_key_thumb, caption
+    SELECT id, city_id, r2_key_thumb, r2_key_medium, r2_key_full, caption
     FROM photos
     WHERE country_id = ? AND is_public = 1
     ORDER BY city_id, capture_date, created_at
   `)
   .bind(country.id)
-  .all<{ id: string; city_id: number; r2_key_thumb: string; caption: string | null }>();
+  .all<{ id: string; city_id: number; r2_key_thumb: string; r2_key_medium: string; r2_key_full: string; caption: string | null }>();
 
 // Group photos by city_id so each city section can render its own grid
 const photosByCity = new Map<number, typeof photos>();
@@ -40,6 +41,16 @@ for (const photo of photos) {
 }
 
 const totalPhotos = photos.length;
+
+// Build flat photos array in DOM order (cities by id, photos by capture_date/created_at)
+const lightboxPhotos = cities.flatMap((city) =>
+  (photosByCity.get(city.id) ?? []).map((p) => ({
+    id: p.id,
+    r2_key_medium: p.r2_key_medium,
+    r2_key_full: p.r2_key_full,
+    city_name: city.name,
+  }))
+);
 ---
 
 <BaseLayout title={`${country.name} — Footsteps`}>
@@ -82,7 +93,7 @@ const totalPhotos = photos.length;
           ) : (
             <div class="columns-1 gap-4 sm:columns-2 lg:columns-3">
               {cityPhotos.map((photo) => (
-                <div class="group mb-4 block break-inside-avoid overflow-hidden">
+                <div class="group mb-4 block break-inside-avoid overflow-hidden" data-lightbox-id={photo.id}>
                   <img
                     src={`/i/${photo.r2_key_thumb}`}
                     alt={photo.caption ?? ""}
@@ -100,4 +111,6 @@ const totalPhotos = photos.length;
       );
     })
   }
+
+  <Lightbox photos={lightboxPhotos} mode="public" />
 </BaseLayout>

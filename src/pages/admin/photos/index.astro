@@ -2,6 +2,7 @@
 export const prerender = false;
 
 import BaseLayout from "../../../layouts/BaseLayout.astro";
+import Lightbox from "../../../components/Lightbox.astro";
 import { requireAdmin } from "../../../lib/admin-auth";
 
 const auth = requireAdmin(Astro.request);
@@ -46,6 +47,9 @@ if (auth instanceof Response) return auth;
     <p id="loading-indicator" class="hidden text-center text-sm text-foreground/40 py-4">Loading more…</p>
 
   </div>
+
+  <!-- Lightbox — photos array populated client-side via window.lightboxRefresh -->
+  <Lightbox photos={[]} mode="admin" />
 
   <!-- Edit modal -->
   <div id="edit-modal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true">
@@ -203,6 +207,12 @@ if (auth instanceof Response) return auth;
         state.done   = state.offset >= state.total;
         renderGrid(data.photos || []);
         updateCounter();
+        // Sync lightbox navigable set with the full accumulated grid state
+        if (typeof window.lightboxRefresh === "function") {
+          window.lightboxRefresh(state.photos.map(function (p) {
+            return { id: p.id, r2_key_medium: p.r2_key_medium, r2_key_full: p.r2_key_full, city_name: p.city_name };
+          }));
+        }
         document.getElementById("loading-indicator").classList.add("hidden");
         if (state.done) document.getElementById("scroll-sentinel").style.display = "none";
         state.loading = false;
@@ -220,13 +230,14 @@ if (auth instanceof Response) return auth;
       var tile = document.createElement("div");
       tile.className = "relative cursor-pointer group aspect-square overflow-hidden rounded bg-white/5";
       tile.dataset.photoId = photo.id;
+      tile.dataset.lightboxId = photo.id;
       tile.innerHTML =
         '<img src="/i/' + esc(photo.r2_key_thumb) + '" alt="" class="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" loading="lazy" />' +
         (photo.is_public === 0 ? '<div class="absolute top-1.5 right-1.5 text-xs select-none opacity-70">🔒</div>' : '') +
         '<div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1.5 translate-y-full group-hover:translate-y-0 transition-transform duration-150">' +
         '<p class="text-xs font-semibold tracking-widest uppercase text-white/80 truncate">' + esc(photo.city_name) + '</p>' +
         '</div>';
-      tile.addEventListener("click", function () { openEditModal(photo); });
+      // Click handled by Lightbox via data-lightbox-id; edit modal opened via lightbox:edit event
       grid.appendChild(tile);
     });
   }
@@ -368,7 +379,16 @@ if (auth instanceof Response) return auth;
   document.getElementById("edit-modal-backdrop").addEventListener("click", closeEditModal);
   document.getElementById("modal-cancel").addEventListener("click", closeEditModal);
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") closeEditModal();
+    if (e.key === "Escape" && !document.getElementById("edit-modal").classList.contains("hidden")) {
+      closeEditModal();
+    }
+  });
+
+  // Open edit modal from lightbox edit icon
+  window.addEventListener("lightbox:edit", function (e) {
+    var photoId = e.detail && e.detail.photoId;
+    var photo = state.photos.find(function (p) { return p.id === photoId; });
+    if (photo) openEditModal(photo);
   });
 
   // ── Modal country/city dropdowns ─────────────────────────────────────────
