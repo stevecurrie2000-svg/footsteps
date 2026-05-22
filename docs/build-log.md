@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 22 May 2026, 21:30
+**Last updated**: 22 May 2026, 22:15
 
 | Item | State |
 |---|---|
@@ -22,9 +22,9 @@ boundaries.
 | Phase 4 Slice 3 — Nominatim geocoding + auto-create | ✅ Done (geocode fix 22 May 2026) |
 | Phase 4 Slice 4 — Per-file review table | ✅ Done |
 | Phase 4 Slice 5 — `/admin/countries` management | ✅ Done |
-| Phase 5 — Private section + Access | ⏳ Code + Access apps live, verification walkthrough pending |
+| Phase 5 — Private section + Access | ✅ Done (real-world test with Lorraine/Mia/Alex pending) |
 | Phase 6 — Polish | ⏳ Not started |
-| Next immediate task | Continue Phase 5 verification (upload thumbnail fix shipped 22 May 2026) |
+| Next immediate task | Phase 6 — Polish (lightbox, lazy loading + Astro <Image>, custom 404, analytics, JWT signature validation) |
 
 ---
 
@@ -1770,6 +1770,110 @@ New-country branch unchanged.
 
 ---
 
+### Session: Phase 5 verification walkthrough + close-out (22 May 2026, evening)
+
+**Context**: Final session of a long evening. Phase 5 (Private
+section + Cloudflare Access) had four discrete pieces of work shipped
+across the day:
+
+1. Geocode fix — partial wins + suburb preference
+2. Cloudflare Access rebuild — Footsteps Private app
+3. Footer Private link fix
+4. Auto-thumbnail fix for existing-country private uploads
+
+This session ran the verification walkthrough end-to-end via the
+Claude Chrome extension, plus a real upload test that exercised both
+auto-thumbnail code paths.
+
+**Verification — what was tested**
+
+Tests automated via the Claude Chrome extension on a signed-in
+session at `https://footsteps.gallery`:
+
+| # | Test | Result |
+|---|---|---|
+| 1 | Bare `/private` redirect to sign-in (incognito) | ✅ Verified during Access rebuild earlier |
+| 2 | `/private/<slug>` redirect to sign-in | ✅ Same code path as #1 |
+| 3 | Public `/` loads without auth | ✅ Shows UK only (correct filter) |
+| 4 | Public `/countries/united-kingdom` loads | ✅ 3 cities, 1 photograph |
+| 5 | Footer Private link site-wide | ✅ Present on `/`, `/countries/<slug>`, `/admin`, `/private` |
+| 6 | Signed-in `/private` lands on country grid with warm amber nav tint | ✅ |
+| 7 | Signed-in `/private/countries/<slug>` renders correctly | ✅ "0 cities · 0 photographs" pre-upload (correct private-only filter) |
+| 8 | Public photo `/i/<key>` loads without auth | ✅ Tower Bridge thumbnail serves directly |
+
+**Upload verification — both auto-thumbnail branches**
+
+- **Existing-country private upload** (Australia/Cessnock): the
+  initial upload landed in D1 and R2 correctly but Australia appeared
+  on `/private` without a thumbnail (the bug that triggered the fix
+  earlier this session). After the fix deployed, a re-upload set
+  `private_thumbnail_photo_id` on the Australia row.
+- **New-country private upload** (Philippines): country auto-created,
+  city auto-created, `private_thumbnail_photo_id` set on the new row,
+  thumbnail rendered on the `/private` grid. Pre-existing new-country
+  code path confirmed still working after the patch.
+
+**`/private` grid after both uploads**
+
+Two tile cards rendering side by side: Australia (Bonvilla vineyard
+sunset, Cessnock) and Philippines (cityscape, location to be
+confirmed once Nominatim's resolution is reviewed). Sort order is
+"most recent private upload first" — Philippines first, Australia
+second, consistent with upload order.
+
+**Public homepage after both uploads**
+
+Country grid shows United Kingdom only. Australia and Philippines
+correctly absent — the `WHERE EXISTS public photos` filter holds. Schema
+separation between public and private audiences verified end-to-end.
+
+**Acceptance criteria from the Phase 5 design session**
+
+| Criterion | Status |
+|---|---|
+| Bare `/private` gated by Access | ✅ |
+| `/private/*` gated by Access | ✅ |
+| `/api/private/*` gated by Access | ✅ (proven by `/private` page making API calls) |
+| `/i/*` gated by Access for private photos | ✅ (private photos render under auth) |
+| Allowlisted user lands on `/private` country grid | ✅ |
+| Warm amber nav tint on `/private` routes | ✅ |
+| Footer Private link site-wide | ✅ |
+| Schema separation: private uploads invisible on public pages | ✅ |
+| New-country auto-create on private upload | ✅ |
+| Country thumbnail auto-set on first private upload | ✅ (after today's fix) |
+| Country in `/private` grid sorted by most-recent private upload | ✅ |
+
+**Real-world tests carried**
+
+These cannot be run from Steve's account and remain on the carry list:
+
+- **Non-allowlisted Google account gets 404 on `/private`** — needs a
+  second Google account not on the 4-email allowlist.
+- **Lorraine, Mia, Alex sign-in from their own browsers** — pending
+  Steve sending them the URL.
+
+**Carries closed by this session**
+
+- Phase 5 verification walkthrough (the primary purpose of the session)
+- Auto-thumbnail bug discovered + fixed + verified within the same
+  session
+
+**Phase 5 declared ✅ Done.** Phase 6 (Polish) is the next phase.
+
+**Lesson learned this session** (fold into Lessons → Technical
+sub-heading):
+
+- **End-to-end verification often uncovers subtle bugs in adjacent
+  code paths.** The auto-thumbnail bug was a Phase 4 Slice 5 +
+  Phase 5 rename interaction issue — invisible until a real upload
+  exercised the existing-country + private-audience combination.
+  Verification walkthroughs that exercise real workflows with real
+  files are worth their time cost. Unit tests on the upload route
+  would not have caught this because the bug is a missing case, not
+  a wrong implementation of an expected case.
+
+---
+
 ## Lessons learned
 
 **Documentation**
@@ -1850,6 +1954,14 @@ New-country branch unchanged.
   rename caught the new-country thumbnail branch but missed the
   existing-country branch because they live in different conditional
   arms of the same function.
+- **End-to-end verification often uncovers subtle bugs in adjacent
+  code paths.** The auto-thumbnail bug was a Phase 4 Slice 5 +
+  Phase 5 rename interaction issue — invisible until a real upload
+  exercised the existing-country + private-audience combination.
+  Verification walkthroughs that exercise real workflows with real
+  files are worth their time cost. Unit tests on the upload route
+  would not have caught this because the bug is a missing case, not
+  a wrong implementation of an expected case.
 
 **Cloudflare Access dashboard (UI refresh — May 2026)**
 
