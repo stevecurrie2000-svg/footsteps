@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 22 May 2026, 10:00
+**Last updated**: 22 May 2026, 18:33
 
 | Item | State |
 |---|---|
@@ -24,7 +24,7 @@ boundaries.
 | Phase 4 Slice 5 — `/admin/countries` management | ✅ Done |
 | Phase 5 — Private section + Access | ⏳ Code deployed, verification partially done |
 | Phase 6 — Polish | ⏳ Not started |
-| Next immediate task | Fix Footsteps Private Access app (add `private` bare-path destination), complete Phase 5 verification |
+| Next immediate task | Complete Phase 5 verification walkthrough (footer Private link now done; bare-path Access destination fix pending dashboard) |
 
 ---
 
@@ -1516,6 +1516,40 @@ verification.
 - **Update the project's standard Access-app setup procedure**
   whenever a future Phase touches Access. Pattern: both a bare-path
   destination AND a wildcard destination for every gated section.
+
+---
+
+### Session: Footer Private link fix (22 May 2026, 18:33)
+
+**Context**: Phase 5 carry from the 19 May build session. The build log recorded that BaseLayout should gain a muted "Private" link in the footer on every page, but it was never actually added.
+
+**Diagnosis**: `src/layouts/BaseLayout.astro` has a footer with only a copyright line:
+
+```astro
+<footer class="border-t border-white/10 py-8 text-center">
+  <p class="text-xs text-[#fafafa]/30">
+    &copy; {new Date().getFullYear()} Footsteps
+  </p>
+</footer>
+```
+
+The Private link is present in the **nav** (unconditional), but was never added to the footer. No pages override the footer — it's BaseLayout-only, so a single edit fixes all pages at once.
+
+**Fix shipped**: Added a `·` separator and the Private link into the existing footer `<p>`:
+
+```astro
+<footer class="border-t border-white/10 py-8 text-center">
+  <p class="text-xs text-[#fafafa]/30">
+    &copy; {new Date().getFullYear()} Footsteps
+    &nbsp;·&nbsp;
+    <a href="/private" class="text-foreground/40 hover:text-foreground/60 transition-colors text-xs">Private</a>
+  </p>
+</footer>
+```
+
+Link is unconditional — Cloudflare Access gates the destination, not the link visibility.
+
+**Verified**: `npm run build` clean. Link present in the compiled output for `/`, `/countries/[slug]`, `/admin`, and `/private` (all use BaseLayout).
 
 ---
 
