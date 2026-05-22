@@ -21,6 +21,8 @@ type PhotoRow = {
   longitude: number | null;
   uploaded_at: string;
   caption: string | null;
+  width: number | null;
+  height: number | null;
 };
 
 export const GET: APIRoute = async ({ request }) => {
@@ -73,7 +75,8 @@ export const GET: APIRoute = async ({ request }) => {
       c.slug AS country_slug, c.name AS country_name,
       ci.id AS city_id, ci.slug AS city_slug, ci.name AS city_name,
       p.is_public, p.capture_date, p.latitude, p.longitude,
-      p.created_at AS uploaded_at, p.caption
+      p.created_at AS uploaded_at, p.caption,
+      p.width, p.height
     ${baseFrom}
     ORDER BY ${orderClause}
     LIMIT ?${idx} OFFSET ?${idx + 1}

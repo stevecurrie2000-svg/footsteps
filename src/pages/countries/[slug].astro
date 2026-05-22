@@ -24,13 +24,13 @@ const { results: cities } = await env.DB
 // Fetch public photos for this country, ordered for a consistent layout
 const { results: photos } = await env.DB
   .prepare(`
-    SELECT id, city_id, r2_key_thumb, r2_key_medium, r2_key_full, caption
+    SELECT id, city_id, r2_key_thumb, r2_key_medium, r2_key_full, caption, width, height
     FROM photos
     WHERE country_id = ? AND is_public = 1
     ORDER BY city_id, capture_date, created_at
   `)
   .bind(country.id)
-  .all<{ id: string; city_id: number; r2_key_thumb: string; r2_key_medium: string; r2_key_full: string; caption: string | null }>();
+  .all<{ id: string; city_id: number; r2_key_thumb: string; r2_key_medium: string; r2_key_full: string; caption: string | null; width: number | null; height: number | null }>();
 
 // Group photos by city_id so each city section can render its own grid
 const photosByCity = new Map<number, typeof photos>();
@@ -52,6 +52,9 @@ const lightboxPhotos = cities.flatMap((city) =>
     city_name: city.name,
   }))
 );
+
+// First 8 photos in DOM order load eagerly
+const eagerPhotoIds = new Set(lightboxPhotos.slice(0, 8).map(p => p.id));
 ---
 
 <BaseLayout title={`${country.name} — Footsteps`}>
@@ -98,8 +101,10 @@ const lightboxPhotos = cities.flatMap((city) =>
                   <img
                     src={`/i/${photo.r2_key_thumb}`}
                     alt={photo.caption ?? ""}
-                    loading="lazy"
+                    loading={eagerPhotoIds.has(photo.id) ? "eager" : "lazy"}
+                    decoding="async"
                     class="block w-full h-auto"
+                    {...(photo.width && photo.height ? { width: photo.width, height: photo.height } : {})}
                   />
                   <p class="mt-1.5 text-xs uppercase tracking-widest text-[#fafafa]/40">
                     {photo.caption}

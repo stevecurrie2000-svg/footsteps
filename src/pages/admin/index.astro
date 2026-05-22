@@ -85,6 +85,8 @@ const { email } = auth;
     isPublic: boolean;
     status: RowStatus;
     errorMessage: string | null;
+    width: number | null;
+    height: number | null;
   }
 
   // ── Global state ───────────────────────────────────────────────────────────
@@ -386,6 +388,7 @@ const { email } = auth;
     const gpsLat           = exifRaw?.latitude  ?? null;
     const gpsLon           = exifRaw?.longitude ?? null;
     const thumbnailDataUrl = URL.createObjectURL(file);
+    const dims             = await readSourceDimensions(file);
 
     const state: RowState = {
       file,
@@ -403,6 +406,8 @@ const { email } = auth;
       isPublic:            false,
       status:              "idle",
       errorMessage:        null,
+      width:               dims?.width  ?? null,
+      height:              dims?.height ?? null,
     };
     rows.set(rowId, state);
 
@@ -657,6 +662,21 @@ const { email } = auth;
     addFiles(this.files);
   });
 
+  // ── Source dimensions ──────────────────────────────────────────────────────
+  async function readSourceDimensions(file: File): Promise<{ width: number; height: number } | null> {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      return { width: img.naturalWidth, height: img.naturalHeight };
+    } catch {
+      return null;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
   // ── Image resizing ─────────────────────────────────────────────────────────
   function resizeToBlob(
     img: HTMLImageElement,
@@ -753,6 +773,8 @@ const { email } = auth;
         fd.append("original_filename", state.filename);
         fd.append("geocoded_country",  state.geocodedCountryName ?? "");
         fd.append("geocoded_city",     state.geocodedCityName    ?? "");
+        fd.append("width",  state.width  != null ? String(state.width)  : "");
+        fd.append("height", state.height != null ? String(state.height) : "");
         fd.append("thumb",    thumb,    `${state.filename}-thumb.jpg`);
         fd.append("medium",   medium,   `${state.filename}-medium.jpg`);
         fd.append("full",     full,     `${state.filename}-full.jpg`);

@@ -49,6 +49,13 @@ export const POST: APIRoute = async ({ request }) => {
   const geocodedCountry = ((form.get("geocoded_country") as string | null) ?? "").trim().slice(0, 100);
   const geocodedCity    = ((form.get("geocoded_city")    as string | null) ?? "").trim().slice(0, 100);
 
+  const widthRaw   = form.get("width")  as string | null;
+  const heightRaw  = form.get("height") as string | null;
+  const widthParsed  = widthRaw  && /^\d+$/.test(widthRaw)  ? parseInt(widthRaw,  10) : null;
+  const heightParsed = heightRaw && /^\d+$/.test(heightRaw) ? parseInt(heightRaw, 10) : null;
+  const safeWidth  = widthParsed  !== null && widthParsed  > 0 && widthParsed  <= 100000 ? widthParsed  : null;
+  const safeHeight = heightParsed !== null && heightParsed > 0 && heightParsed <= 100000 ? heightParsed : null;
+
   const thumb    = form.get("thumb")    as File | null;
   const medium   = form.get("medium")   as File | null;
   const full     = form.get("full")     as File | null;
@@ -217,8 +224,9 @@ export const POST: APIRoute = async ({ request }) => {
         `INSERT INTO photos
            (id, city_id, country_id, is_public,
             capture_date, latitude, longitude, original_filename,
-            r2_key_thumb, r2_key_medium, r2_key_full, r2_key_original)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`
+            r2_key_thumb, r2_key_medium, r2_key_full, r2_key_original,
+            width, height)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)`
       ).bind(
         id,
         cityId,
@@ -232,6 +240,8 @@ export const POST: APIRoute = async ({ request }) => {
         mediumKey,
         fullKey,
         originalKey,
+        safeWidth,
+        safeHeight,
       ),
       // New country: always set private thumbnail (first private upload wins).
       // All uploads: set the matching audience thumbnail when null.

@@ -126,6 +126,8 @@ if (auth instanceof Response) return auth;
 <script is:inline>
 (function () {
   // ── State ────────────────────────────────────────────────────────────────
+  var photoLoadIndex = 0;
+
   var state = {
     photos: [],
     total: 0,
@@ -194,6 +196,7 @@ if (auth instanceof Response) return auth;
       state.offset = 0;
       state.photos = [];
       state.done = false;
+      photoLoadIndex = 0;
       document.getElementById("photo-grid").innerHTML = "";
       document.getElementById("photo-counter").textContent = "Loading…";
     }
@@ -227,12 +230,17 @@ if (auth instanceof Response) return auth;
   function renderGrid(photos) {
     var grid = document.getElementById("photo-grid");
     photos.forEach(function (photo) {
+      var eager = photoLoadIndex < 8;
+      photoLoadIndex++;
+      var dimAttrs = (photo.width && photo.height)
+        ? ' width="' + photo.width + '" height="' + photo.height + '"'
+        : '';
       var tile = document.createElement("div");
       tile.className = "relative cursor-pointer group aspect-square overflow-hidden rounded bg-white/5";
       tile.dataset.photoId = photo.id;
       tile.dataset.lightboxId = photo.id;
       tile.innerHTML =
-        '<img src="/i/' + esc(photo.r2_key_thumb) + '" alt="" class="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" loading="lazy" />' +
+        '<img src="/i/' + esc(photo.r2_key_thumb) + '" alt="" class="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" loading="' + (eager ? 'eager' : 'lazy') + '" decoding="async"' + dimAttrs + ' />' +
         (photo.is_public === 0 ? '<div class="absolute top-1.5 right-1.5 text-xs select-none opacity-70">🔒</div>' : '') +
         '<div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1.5 translate-y-full group-hover:translate-y-0 transition-transform duration-150">' +
         '<p class="text-xs font-semibold tracking-widest uppercase text-white/80 truncate">' + esc(photo.city_name) + '</p>' +

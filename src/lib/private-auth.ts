@@ -14,6 +14,8 @@ export function getPrivateViewerEmail(request: Request): string | null {
 
 export function requirePrivateViewer(request: Request): Response | string {
   const email = getPrivateViewerEmail(request);
-  if (!email) return new Response("Not found", { status: 404 });
+  if (!email) {
+    return Response.redirect(new URL("/__not-found__", request.url).toString(), 302);
+  }
   return email;
 }

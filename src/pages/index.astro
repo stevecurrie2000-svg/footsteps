@@ -4,7 +4,8 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
 const { results: countries } = await env.DB
   .prepare(
-    `SELECT c.id, c.slug, c.name, p.r2_key_thumb AS thumbnail_key
+    `SELECT c.id, c.slug, c.name, p.r2_key_thumb AS thumbnail_key,
+            p.width AS thumbnail_width, p.height AS thumbnail_height
      FROM countries c
      LEFT JOIN photos p ON p.id = c.public_thumbnail_photo_id
      WHERE EXISTS (
@@ -15,7 +16,7 @@ const { results: countries } = await env.DB
        WHERE ph2.country_id = c.id AND ph2.is_public = 1
      ) DESC`
   )
-  .all<{ id: number; slug: string; name: string; thumbnail_key: string | null }>();
+  .all<{ id: number; slug: string; name: string; thumbnail_key: string | null; thumbnail_width: number | null; thumbnail_height: number | null }>();
 ---
 
 <BaseLayout title="Footsteps — Europe Photography">
@@ -43,7 +44,11 @@ const { results: countries } = await env.DB
                 src={`/i/${country.thumbnail_key}`}
                 alt=""
                 class="absolute inset-0 h-full w-full object-cover"
-                loading="lazy"
+                loading="eager"
+                decoding="async"
+                {...(country.thumbnail_width && country.thumbnail_height
+                  ? { width: country.thumbnail_width, height: country.thumbnail_height }
+                  : {})}
               />
             )}
             <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
