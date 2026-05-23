@@ -2678,6 +2678,10 @@ until 100+ photos exist across 5+ countries.
 
 **Third-party API integration**
 
+- **MapLibre's mount container needs explicit `h-full w-full` even inside
+  an aspect-ratio'd parent with `absolute inset-0`.** MapLibre adds its own
+  classes during init that can override simple positioning. Always set both
+  `width` AND `height` explicitly on the mount element.
 - **MapTiler FREE plan supports Style API + tile API + Maps SDK but NOT
   Static Maps API.** The Static Maps endpoint returns HTTP 403 with a generic
   error PNG for free-tier keys — even with correct origin restrictions, correct
@@ -3078,6 +3082,10 @@ pointer interaction.
 - Phase 5 real-world test with Lorraine/Mia/Alex — still pending
 - Cloudflare Access: add bare `private` destination
 - Favicon: check at 16×16 — if toes blur, simplify to big-toe ellipse
+- **Backfill lat/lon (and capture_date) on pre-Slice-2 photos** —
+  specifically the Tower Bridge photo uploaded in Phase 3. SQL UPDATE with
+  known Tower Bridge GPS (~51.5055, -0.0754) is the quickest fix;
+  alternative is re-upload via `/admin`.
 - De-duplicating Cessnock test photo (via `/admin/photos`)
 - Revoke `footsteps-upload-script` API token
 - Create `infrastructure.md` (now has one more entry: MapTiler key +
@@ -3101,6 +3109,19 @@ pointer interaction.
   page source and XHR requests. Domain-restriction in the MapTiler dashboard
   is the appropriate guard, not source-control exclusion. Same posture as
   the Cloudflare Web Analytics token (Slice 5) and Access AUDs (Slice 4).
+
+---
+
+### Fix: mount div height collapse (25 May 2026, 09:30)
+
+`<div id="maplibre-mount" class="absolute inset-0">` was collapsing to
+0 height inside the aspect-ratio'd container — `inset-0` alone wasn't
+sufficient when MapLibre rewrote container classes during init. Added
+`h-full w-full` to the mount div. Map now renders correctly.
+
+Tower Bridge photo is missing from the map because it was uploaded in
+Phase 3 before EXIF GPS parsing existed — known data gap, separate
+cleanup task (see carries).
 
 ---
 
