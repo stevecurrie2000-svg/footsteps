@@ -2559,6 +2559,13 @@ until 100+ photos exist across 5+ countries.
   occurrence and silently left the other, because the success criterion
   was "visual check the homepage" rather than "grep returns zero matches".
   Any search-and-replace patch must end with a grep audit before commit.
+- **Phase 7 Slice 1 took three iterations to ship because the original
+  brief made unverified assumptions about three things**: (a) placeholder
+  substitution would happen during build; (b) the `dark-matter` style ID
+  was universally available; (c) Static Maps API was on the free tier. All
+  three were testable in ~5 minutes via curl before the brief was written.
+  For future briefs that depend on third-party APIs: spend 10 minutes hitting
+  each planned endpoint with a real key before writing a line of source code.
 
 **Working with Claude Code**
 
@@ -2671,6 +2678,11 @@ until 100+ photos exist across 5+ countries.
 
 **Third-party API integration**
 
+- **MapTiler FREE plan supports Style API + tile API + Maps SDK but NOT
+  Static Maps API.** The Static Maps endpoint returns HTTP 403 with a generic
+  error PNG for free-tier keys — even with correct origin restrictions, correct
+  URL syntax, and correct style IDs. Verify specific endpoint availability
+  against the chosen pricing tier in the docs before depending on it.
 - **Always verify a third-party map style ID against the live API before
   baking it into a brief.** MapTiler's catalogue of available styles varies
   per account — `dark-matter` is the canonical OpenMapTiles dark style but
@@ -3089,6 +3101,42 @@ pointer interaction.
   page source and XHR requests. Domain-restriction in the MapTiler dashboard
   is the appropriate guard, not source-control exclusion. Same posture as
   the Cloudflare Web Analytics token (Slice 5) and Access AUDs (Slice 4).
+
+---
+
+### Fix: drop Static Maps, render MapLibre on page load (25 May 2026, 09:20)
+
+**Context**: MapTiler Static Maps API returns HTTP 403 on the free tier
+regardless of key, URL format, or style ID — it requires a paid plan (~AU$30/
+month). The Style API and tile API (used by MapLibre GL) work fine on the free
+tier. Decision: drop the three-layer architecture entirely and render the
+interactive MapLibre map directly on page load.
+
+**Architecture change**: 3 layers (static WebP placeholder + CSS anchor dots +
+MapLibre mount) → 1 layer (MapLibre mount only) + hidden `<ul>` text list
+for screen readers / no-JS.
+
+**What changed in `src/pages/index.astro`**:
+
+- *Frontmatter*: deleted `PLACEHOLDER_WIDTH`, `PLACEHOLDER_HEIGHT`,
+  `placeholderUrl`, `placeholderAlt`, and `MAPTILER_KEY` (moved to script
+  block). Added `mapLabel` (reused as `aria-label` on the container) and
+  `pinsJson` (serialised pin array for the script).
+- *Template*: deleted `<img id="map-placeholder">` and `<div id="pin-overlay">`.
+  `map-container` now has `role="region"` + `aria-label` + `data-pins` attribute.
+  `maplibre-mount` is the only child, with no `opacity-0 pointer-events-none`.
+  Hidden `<ul class="sr-only">` text list unchanged.
+- *Script*: deleted `IntersectionObserver`, `pointerdown` trigger, `hydrated`
+  flag, `hydrateMap()` wrapper, and cross-fade logic. Map now initialises
+  immediately via an async IIFE. Pin data read from `container.dataset.pins`
+  (HTML-encoded by Astro, decoded by the browser before `JSON.parse`).
+  `MAPTILER_KEY` and new `MAP_STYLE_ID` constants are the only identifiers.
+
+Trade-off accepted: ~1s delay before the map paints on first load while
+MapLibre's JS chunk downloads. Acceptable for a personal portfolio where
+the country-grid tiles below the fold are the primary content.
+
+`npm run build` clean. Committed and pushed to main.
 
 ---
 

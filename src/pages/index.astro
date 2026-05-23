@@ -67,21 +67,17 @@ for (const pin of pins) {
   if (pin.latitude  > neLat) neLat = pin.latitude;
 }
 
-// Replace with your MapTiler key from https://cloud.maptiler.com/account/keys/
-// Domain-restrict to footsteps.gallery in the key settings.
-// Public client-side identifier — source-control safe.
-const MAPTILER_KEY = 'rnng4ZJQRqxg61gTfGU6';
-
-const PLACEHOLDER_WIDTH  = 1200;
-const PLACEHOLDER_HEIGHT = 480;
-const placeholderUrl =
-  `https://api.maptiler.com/maps/basic-v2-dark/static/` +
-  `[${swLon},${swLat},${neLon},${neLat}]/${PLACEHOLDER_WIDTH}x${PLACEHOLDER_HEIGHT}.webp` +
-  `?key=${MAPTILER_KEY}&padding=8`;
-
-const placeholderAlt = pins.length === 0
+const mapLabel = pins.length === 0
   ? 'Map of Europe showing photograph locations (none yet)'
   : `Map showing photograph locations in ${pins.map(p => p.city_name).join(', ')}`;
+
+const pinsJson = JSON.stringify(pins.map(p => ({
+  lat: p.latitude,
+  lon: p.longitude,
+  cityName: p.city_name,
+  countrySlug: p.country_slug,
+  count: p.photo_count,
+})));
 ---
 
 <BaseLayout
@@ -103,57 +99,17 @@ const placeholderAlt = pins.length === 0
 
       <div
         id="map-container"
+        role="region"
+        aria-label={mapLabel}
         class="relative mx-auto max-w-7xl overflow-hidden rounded-sm bg-zinc-900"
-        style={`aspect-ratio: ${PLACEHOLDER_WIDTH} / ${PLACEHOLDER_HEIGHT};`}
+        style="aspect-ratio: 1200 / 480;"
         data-sw-lon={swLon}
         data-sw-lat={swLat}
         data-ne-lon={neLon}
         data-ne-lat={neLat}
+        data-pins={pinsJson}
       >
-        <!-- Layer 0: static placeholder image -->
-        <img
-          id="map-placeholder"
-          src={placeholderUrl}
-          alt={placeholderAlt}
-          width={PLACEHOLDER_WIDTH}
-          height={PLACEHOLDER_HEIGHT}
-          class="absolute inset-0 h-full w-full object-cover transition-opacity duration-300"
-          loading="lazy"
-          decoding="async"
-        />
-
-        <!-- Layer 1: CSS-positioned dot anchors (navigate without JS) -->
-        <div id="pin-overlay" class="absolute inset-0 transition-opacity duration-300">
-          {pins.map(pin => {
-            const xPercent = ((pin.longitude - swLon) / (neLon - swLon)) * 100;
-            const yPercent = ((neLat - pin.latitude) / (neLat - swLat)) * 100;
-            return (
-              <a
-                href={`/countries/${pin.country_slug}`}
-                class="group absolute z-10 -translate-x-1/2 -translate-y-1/2"
-                style={`left: ${xPercent.toFixed(3)}%; top: ${yPercent.toFixed(3)}%;`}
-                aria-label={`View photographs from ${pin.city_name} (${pin.photo_count} photograph${pin.photo_count === 1 ? '' : 's'})`}
-                data-pin-city={pin.city_name}
-                data-pin-count={pin.photo_count}
-                data-pin-country={pin.country_slug}
-                data-pin-lat={pin.latitude}
-                data-pin-lon={pin.longitude}
-              >
-                <span class="block h-2.5 w-2.5 rounded-full bg-foreground shadow-[0_0_0_4px_rgba(250,250,250,0.15)] transition-all duration-150 group-hover:h-3.5 group-hover:w-3.5" />
-                <span class="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-black/90 px-2 py-1 text-xs font-medium uppercase tracking-widest text-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus:opacity-100">
-                  {pin.city_name}{pin.photo_count > 1 ? ` · ${pin.photo_count}` : ''}
-                </span>
-              </a>
-            );
-          })}
-        </div>
-
-        <!-- Layer 2: MapLibre mount point (hydrated on scroll/interaction) -->
-        <div
-          id="maplibre-mount"
-          class="absolute inset-0 opacity-0 transition-opacity duration-300 pointer-events-none"
-          aria-hidden="true"
-        ></div>
+        <div id="maplibre-mount" class="absolute inset-0"></div>
       </div>
 
       <!-- Screen reader + no-JS navigation list -->
@@ -204,46 +160,34 @@ const placeholderAlt = pins.length === 0
 
 <script>
   const MAPTILER_KEY = 'rnng4ZJQRqxg61gTfGU6';
+  const MAP_STYLE_ID = 'basic-v2-dark';
 
   const container = document.getElementById('map-container') as HTMLElement | null;
   const mount = document.getElementById('maplibre-mount') as HTMLElement | null;
-  const pinAnchors = container?.querySelectorAll<HTMLAnchorElement>('a[data-pin-city]');
 
-  if (container && mount && pinAnchors && pinAnchors.length > 0) {
-    let hydrated = false;
+  if (container && mount) {
+    const bounds: [[number, number], [number, number]] = [
+      [parseFloat(container.dataset.swLon ?? '-10'), parseFloat(container.dataset.swLat ?? '35')],
+      [parseFloat(container.dataset.neLon ?? '30'),  parseFloat(container.dataset.neLat ?? '60')],
+    ];
 
-    async function hydrateMap() {
-      if (hydrated) return;
-      hydrated = true;
+    const pins = JSON.parse(container.dataset.pins ?? '[]') as {
+      lat: number; lon: number; cityName: string; countrySlug: string; count: number;
+    }[];
 
-      // Dynamic import — maplibre-gl lands in a separate chunk, not the initial bundle
+    (async () => {
       const maplibregl = (await import('maplibre-gl')).default;
 
-      // Inject MapLibre CSS on demand
       const link = document.createElement('link');
       link.rel = 'stylesheet';
       link.href = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css';
       document.head.appendChild(link);
 
-      // One frame for the stylesheet to apply before measuring
       await new Promise<void>(r => requestAnimationFrame(() => r()));
-
-      const pins = Array.from(pinAnchors).map(a => ({
-        lon:         parseFloat(a.dataset.pinLon     ?? '0'),
-        lat:         parseFloat(a.dataset.pinLat     ?? '0'),
-        cityName:    a.dataset.pinCity    ?? '',
-        countrySlug: a.dataset.pinCountry ?? '',
-        count:       parseInt(a.dataset.pinCount ?? '0', 10),
-      }));
-
-      const bounds: [[number, number], [number, number]] = [
-        [parseFloat(container.dataset.swLon ?? '-10'), parseFloat(container.dataset.swLat ?? '35')],
-        [parseFloat(container.dataset.neLon ?? '30'),  parseFloat(container.dataset.neLat ?? '60')],
-      ];
 
       const map = new maplibregl.Map({
         container: 'maplibre-mount',
-        style: `https://api.maptiler.com/maps/basic-v2-dark/style.json?key=${MAPTILER_KEY}`,
+        style: `https://api.maptiler.com/maps/${MAP_STYLE_ID}/style.json?key=${MAPTILER_KEY}`,
         bounds,
         fitBoundsOptions: { padding: 40 },
         interactive: true,
@@ -270,27 +214,7 @@ const placeholderAlt = pins.length === 0
             )
             .addTo(map);
         }
-
-        // Cross-fade: MapLibre in, static layers out
-        mount.style.opacity = '1';
-        mount.style.pointerEvents = 'auto';
-        const placeholder = document.getElementById('map-placeholder');
-        const overlay     = document.getElementById('pin-overlay');
-        if (placeholder) placeholder.style.opacity = '0';
-        if (overlay)     overlay.style.opacity = '0';
       });
-    }
-
-    // Hydrate on scroll-into-view (200px pre-trigger)
-    const observer = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting) {
-        hydrateMap();
-        observer.disconnect();
-      }
-    }, { rootMargin: '200px' });
-    observer.observe(container);
-
-    // Also hydrate on first pointer interaction with the map area
-    container.addEventListener('pointerdown', hydrateMap, { once: true });
+    })();
   }
 </script>
