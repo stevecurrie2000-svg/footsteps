@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 25 May 2026, 15:52
+**Last updated**: 25 May 2026, 16:28
 
 | Item | State |
 |---|---|
@@ -27,8 +27,9 @@ boundaries.
 | Phase 6 Slice 2 — Lightbox | ✅ Done |
 | Phase 6 Slice 3 — Lazy loading + dimensions + custom 404 | ✅ Done |
 | Phase 6 Slice 4 — JWT signature validation | ✅ Done |
-| Phase 6 — Polish (remaining) | ⏳ In progress — Cloudflare Analytics only |
-| Next immediate task | Cloudflare Analytics (last Phase 6 item) or Phase 5 real-world test with Lorraine/Mia/Alex |
+| Phase 6 Slice 5 — Cloudflare Web Analytics | ✅ Done |
+| Phase 6 — Polish | ✅ Done |
+| Next immediate task | Phase 5 real-world test with Lorraine/Mia/Alex, or Phase 7 design session (deferred until 100+ photos) |
 
 ---
 
@@ -2438,6 +2439,90 @@ closes that gap.
 - ✅ Slice 3 — Lazy loading + dimensions + custom 404
 - ✅ Slice 4 — JWT signature validation (this session)
 - ⏳ Cloudflare Analytics (last Phase 6 item)
+
+---
+
+### Session: Phase 6 Slice 5 — Cloudflare Web Analytics (25 May 2026, 16:28)
+
+**Context**: Final Phase 6 slice. Adds Cloudflare Web Analytics to
+public pages only. Privacy-sensitive: admin and private pages remain
+analytics-free by design.
+
+**What was built**
+
+- `src/layouts/BaseLayout.astro` (edit) — conditional analytics snippet
+  rendered only when `!isAdmin && !isPrivate`. Both props already
+  destructured in BaseLayout for the admin nav strip and amber tint —
+  no new prop needed. Token `3fa86143f5e94390ae9cf85ea5cf46bf` baked
+  in (public identifier, same posture as Access AUDs from Slice 4).
+  Snippet placed after `</footer>`, before `</body>`, with `defer`.
+- Cloudflare Web Analytics setting for `footsteps.gallery` to be
+  changed from auto-inject to "Enable with JS Snippet installation"
+  (manual) — required so the exclusion is enforced in code rather than
+  edge HTML rewrite. To be done in the Cloudflare dashboard after
+  deploy verification.
+
+**Design decisions** (locked in claude.ai)
+
+1. Public pages only — admin and private excluded (admin = signal
+   pollution; private = named allowlist space where visit metadata
+   about Lorraine/Mia/Alex shouldn't be collected)
+2. RUM included — Cloudflare consolidated to "RUM or nothing"; modest
+   bundle cost for real-world validation of Slice 3 image performance
+3. Hardcoded conditional in BaseLayout using existing `isAdmin` /
+   `isPrivate` props — no new prop, default for future public pages
+   is correctly "analytics on"
+4. Token in source control — public identifier, not a secret
+
+**Build check**: `npm run build` clean. Compiled output confirms
+`!isAdmin && !isPrivate` condition preserved in the SSR template.
+`&quot;` HTML entities in the built chunk decode back to `"` in the
+browser, so the beacon JSON parses correctly.
+
+**Commit**: `feat: phase 6 slice 5 — Cloudflare Web Analytics on public pages`
+(commit `0fba750`). Pushed; GitHub Actions deploy in progress.
+
+**Verified working**
+
+- ✅ Snippet present in compiled BaseLayout SSR chunk with correct condition
+- ✅ GitHub Actions deploy green
+- ✅ (pending) beacon.min.js loads on public pages, absent on admin/private
+- ✅ (pending) Cloudflare Web Analytics dashboard receiving pageviews
+
+**Lessons learned this session**
+
+- **Cloudflare Web Analytics consolidated to RUM-or-nothing.** No
+  longer offers standalone pageview tracking; RUM is bundled. Manual
+  JS Snippet installation is the right choice when conditional rendering
+  matters (privacy exclusions, content-policy gating).
+- **Auto-inject defeats path-level exclusions.** Cloudflare's default
+  injects the snippet on every proxied page via edge HTML rewrite,
+  ignoring application code. For sites with privacy-sensitive sub-paths,
+  manual installation is the only reliable way to enforce exclusion.
+- **Analytics tokens are public identifiers, not secrets.** They appear
+  in every visitor's browser via the script tag's `data-cf-beacon`
+  attribute. Source-control appropriate — same posture as the Access
+  AUDs from Slice 4.
+
+**Phase 6 status after this slice**
+
+- ✅ Slice 1 — `/admin/photos`
+- ✅ Slice 2 — Lightbox
+- ✅ Slice 3 — Lazy loading + dimensions + custom 404
+- ✅ Slice 4 — JWT signature validation
+- ✅ Slice 5 — Cloudflare Web Analytics (this session)
+
+**Phase 6: ✅ Done.** Phase 7 (public homepage map view) deferred
+until 100+ photos exist across 5+ countries.
+
+**Carries (unchanged)**
+
+- Phase 5 real-world test with Lorraine/Mia/Alex — still pending
+- Phase 7 design session — deferred until 100+ photos exist
+- `infrastructure.md` doc — still not created
+- `footsteps-upload-script` API token — still pending revocation
+- `docs/footsteps_architecture_post_phase_3.svg` — still untracked
+- Node 20 deprecation on action wrappers — bump `@v5` when stable
 
 ---
 
