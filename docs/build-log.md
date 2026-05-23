@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 24 May 2026, 22:30
+**Last updated**: 24 May 2026, 23:30
 
 | Item | State |
 |---|---|
@@ -31,6 +31,7 @@ boundaries.
 | Phase 6 — Polish | ✅ Done |
 | Slice B — Design polish + correctness fixes | ✅ Done (verified post B.1) |
 | Slice B.1 — Homepage + /private index polish | ✅ Done |
+| Slice C — Lightbox, accessibility, social, favicon | ✅ Done |
 | Next immediate task | Phase 5 real-world test with Lorraine/Mia/Alex, or Phase 7 design session (deferred until 100+ photos) |
 
 ---
@@ -2561,6 +2562,13 @@ until 100+ photos exist across 5+ countries.
 
 **Technical**
 
+- **OG meta gating is a privacy feature.** Conditional rendering of
+  `<meta property="og:*">` tags based on whether a page is public keeps
+  private URLs from leaking thumbnails or country names when shared in
+  messaging apps. Default to no meta unless the page explicitly opts in.
+  Implemented: `BaseLayout` only emits OG tags when `ogTitle` is passed;
+  private/admin/404 pages pass no OG props.
+
 - **Astro v6 removed `Astro.locals.runtime.env`** — replace with
   `import { env } from "cloudflare:workers"`. Affects any code that
   accesses Cloudflare bindings (D1, R2, KV).
@@ -2814,3 +2822,122 @@ only in `href` prefix and `BaseLayout` props. Left as two parallel templates
 - Revoke `footsteps-upload-script` API token
 - Create `infrastructure.md`
 - De-duplicating Cessnock test photo (via `/admin/photos`, separate concern)
+
+---
+
+## Slice C — Lightbox, accessibility, social, favicon ✅
+
+**Completed**: 24 May 2026, 23:30
+
+**Context**: Closes five items (N1, N2, N4, N5, N6) from the post-Slice B
+design review. N3 (loading skeleton) deliberately skipped — see below.
+
+**What was built**:
+
+**N6 — Favicon**
+- `public/favicon.svg`: bare footprint silhouette (sole + 5 toes), white
+  `#fafafa` on `#0a0a0a` background, 64×64 viewBox. Replaces Astro default.
+- `public/apple-touch-icon.png`: 180×180 generated from the SVG via `sharp`
+  (Node.js) at `density: 450` then resized. No ImageMagick dependency.
+- `public/favicon.ico` deleted (Astro default, no longer needed).
+- `BaseLayout.astro`: added `<link rel="apple-touch-icon" sizes="180x180">`.
+  Note: if toes blur at 16×16 tab size, simplify to big-toe ellipse only.
+
+**N5 — OG / Twitter Card metadata**
+- `BaseLayout.astro` Props extended with `ogTitle, ogDescription, ogImage,
+  ogType` (all optional). Meta tags rendered conditionally: zero OG output
+  when props are absent. Private, admin, and 404 pages pass no OG props.
+- `index.astro`: queries most-recent public photo as cover image; passes
+  ogTitle="Footsteps", ogDescription="A photographer's journey through
+  Europe.", ogType="website".
+- `countries/[slug].astro`: country query extended with LEFT JOIN to fetch
+  thumbnail's `r2_key_medium`; ogImage built from it; ogType="article".
+
+**N4 — WCAG AA contrast**
+
+| Element | Before | After | Ratio |
+|---|---|---|---|
+| Empty state text (public + private) | `/40` (2.7:1) | `/60` (6.6:1) | ✅ Pass |
+| Lightbox caption | `/60` (6.6:1) | `/80` (12.4:1) | ✅ Pass |
+| City headings | `/80` — already from Slice B | unchanged | ✅ Pass |
+| Country tile labels | `text-white` — already full opacity | unchanged | ✅ Pass |
+
+**Ambient chrome exceptions (deliberate, leave below AA):**
+- Footer copyright: `/20` (1.3:1) — ambient chrome
+- Footer Private link: `/20` default, `/40` hover — ambient chrome
+- Breadcrumbs: `/30` (1.7:1) on country pages — ambient chrome
+
+Rationale: photographer-portfolio aesthetic prioritises quiet chrome over
+compliance for the secondary visual layer. All primary content passes WCAG AA.
+
+**N1 — Lightbox refinements**
+- Background: `bg-black` (was `bg-black/95`) — effectively indistinguishable
+  on the dark theme but correct.
+- Fade: `transition-opacity duration-200 ease-out`. Replaced `hidden`/show
+  toggle with `opacity-0 pointer-events-none` pattern so transitions animate
+  correctly (display:none blocks CSS transitions).
+- Caption: `text-foreground/80` (was `/60`). Shows city + date:
+  "LONDON · 14 JUNE 2025" using `Intl.DateTimeFormat('en-GB')`. Falls back
+  to city-only if `capture_date` is absent or invalid. Non-breaking spaces
+  around the dot separator.
+- `capture_date` added to photo SELECT query and TypeScript type in both
+  `countries/[slug].astro` and `private/countries/[slug].astro`, and
+  propagated into `lightboxPhotos`.
+
+**N2 — Click-to-zoom**
+- Click image → zoom to full variant, scroll-centred on click point (frac
+  of fit-mode image). Click again → zoom out to medium.
+- `imageWrapper` becomes `overflow-auto` in zoom mode; padding/centering
+  classes removed.
+- Image sizing: `max-h-full max-w-full object-contain` removed in zoom;
+  `cursor-grab` / `cursor-grabbing` applied.
+- Pan: `mousedown` on wrapper stores pan origin; `window.mousemove`/
+  `mouseup` track delta and scroll wrapper; `mouseup` on window so pan
+  survives cursor leaving image bounds.
+- Click vs pan: `moved` guard on `img.click` (distance threshold 5px from
+  `mousedown` position) prevents accidental zoom toggle after pan.
+- Touch pinch-zoom: `imageWrapper.style.touchAction = 'pinch-zoom'` in zoom
+  mode; browser handles natively.
+- Arrows + caption hidden while zoomed; `Esc` closes entirely; `←`/`→`
+  keys no-op when zoomed; swipe gestures gated on `zoomState === 'fit'`;
+  overlay click only closes in fit mode.
+- `lightboxRefresh` (admin) does instant close (no animation); resets zoom
+  DOM state if active.
+- History/popstate wiring updated for new open/close animation pattern.
+
+**N3 — Deliberately NOT built**
+
+Loading skeleton / shimmer pulse. Rationale: Phase 6 Slice 3's lazy loading
++ width/height attributes already give a polished layout-shift-free
+experience. The dark zinc placeholder (`bg-zinc-800` on country tiles) IS
+the loading state — it's indistinguishable from the dark palette. Adding a
+shimmer pulse would compete with the "quiet chrome" principle and add
+JavaScript for negligible user value.
+
+**Verified working**:
+
+- [ ] Favicon shows footprint in every tab
+- [ ] Apple touch icon shows footprint on iOS homescreen
+- [ ] OG card on `/countries/united-kingdom` — thumbnail + title + description
+- [ ] OG card on `/` — cover photo + "Footsteps" / "A photographer's journey..."
+- [ ] Negative test: `/private/countries/australia` — no OG meta in source
+- [ ] Empty state `/countries/france` — text visibly readable (not ghosted)
+- [ ] Lightbox caption: city + date in en-GB format, small caps
+- [ ] Lightbox caption no-date fallback: city only, no trailing artefact
+- [ ] Lightbox 200ms fade open and close
+- [ ] Click-to-zoom + pan (desktop)
+- [ ] Esc while zoomed: closes lightbox
+- [ ] Arrow keys while zoomed: no navigation
+- [ ] Mobile pinch-zoom
+- [ ] Mobile swipe-to-nav still works in fit mode
+
+**Carries**:
+- Phase 5 real-world test with Lorraine/Mia/Alex — still pending
+- Cloudflare Access: add bare `private` destination
+- Phase 7 design session (100+ photos / 5+ countries threshold)
+- Favicon: check at 16×16 — if toes blur, simplify to big-toe ellipse
+- Backfilling `capture_date` on pre-Slice-C photos (not needed; old photos
+  show city-only captions gracefully)
+- De-duplicating Cessnock test photo (via `/admin/photos`)
+- Revoke `footsteps-upload-script` API token
+- Create `infrastructure.md`
