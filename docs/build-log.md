@@ -32,8 +32,8 @@ boundaries.
 | Slice B — Design polish + correctness fixes | ✅ Done (verified post B.1) |
 | Slice B.1 — Homepage + /private index polish | ✅ Done |
 | Slice C — Lightbox, accessibility, social, favicon | ✅ Done |
-| Phase 7 Slice 1 — Homepage map view | ✅ Done (MapTiler key pending from Steve) |
-| Next immediate task | Replace `'YOUR_MAPTILER_KEY_HERE'` in `src/pages/index.astro` (×2), then Phase 5 real-world test |
+| Phase 7 Slice 1 — Homepage map view | ✅ Done |
+| Next immediate task | Phase 5 real-world test with Lorraine/Mia/Alex; homepage map production verification |
 
 ---
 
@@ -2547,6 +2547,12 @@ until 100+ photos exist across 5+ countries.
   checkboxes were left unchecked at close-out, and Slice B.1 was the
   direct cost of skipping that step. From now on: no slice marked done
   until production verification is run and recorded.
+- **Brief placeholder strings (`YOUR_X_HERE`) are easy to miss in a
+  multi-file edit.** Future briefs that require a runtime key should
+  either (a) refuse to build without the key set, or (b) use a sentinel
+  that fails loudly at deploy time, not at first page load. The MapTiler
+  key shipped to production (Phase 7 Slice 1) because nothing in the
+  build pipeline objected to the known-bad string.
 
 **Working with Claude Code**
 
@@ -3071,3 +3077,26 @@ pointer interaction.
   page source and XHR requests. Domain-restriction in the MapTiler dashboard
   is the appropriate guard, not source-control exclusion. Same posture as
   the Cloudflare Web Analytics token (Slice 5) and Access AUDs (Slice 4).
+
+---
+
+### Fix: MapTiler key — substitute placeholder (24 May 2026, 23:59)
+
+**Context**: Phase 7 Slice 1 shipped with `YOUR_MAPTILER_KEY_HERE` literally
+in production. MapTiler returns HTTP 403 for both the Static Maps API (the
+placeholder WebP) and the Style API (MapLibre hydration), so the homepage
+map section rendered MapTiler's diagonal-grid error image rather than the
+Dark Matter map. All other Phase 7 wiring (pin positions, bounds, hydration
+script, accessibility) was correct.
+
+**Fix**: Replaced both occurrences of `'YOUR_MAPTILER_KEY_HERE'` in
+`src/pages/index.astro` with the real key `rnng4ZJQRqxg61gTfGU6`
+(domain-restricted to `footsteps.gallery` in the MapTiler dashboard).
+`npm run build` clean. Committed and pushed to main.
+
+**Lesson (fold into Lessons → Documentation)**: Brief placeholder strings
+(`YOUR_X_HERE`) are easy to miss in a multi-file edit. Future briefs that
+require a runtime key should either (a) refuse to build without the key set,
+or (b) use a sentinel that fails loudly at deploy time, not at first page
+load. The MapTiler key shipped to production because nothing in the build
+pipeline objected to a known-bad string.
