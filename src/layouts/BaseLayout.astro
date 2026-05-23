@@ -26,7 +26,7 @@ const { title = "Footsteps", isPrivate = false, isAdmin = false } = Astro.props;
     />
   </head>
   <body class="min-h-screen flex flex-col">
-    <header class:list={["sticky top-0 z-50 border-b border-white/10 bg-[#0a0a0a]/90 backdrop-blur-sm", { "bg-amber-950/10": isPrivate }]}>
+    <header class:list={["sticky top-0 z-50 border-b border-white/10 bg-[#0a0a0a]/90 backdrop-blur-sm", { "bg-amber-950/25": isPrivate }]}>
       <nav class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         <a
           href="/"
@@ -58,11 +58,11 @@ const { title = "Footsteps", isPrivate = false, isAdmin = false } = Astro.props;
       <slot />
     </main>
 
-    <footer class="border-t border-white/10 py-8 text-center">
-      <p class="text-xs text-[#fafafa]/30">
+    <footer class="py-8 text-center">
+      <p class="text-xs text-foreground/20">
         &copy; {new Date().getFullYear()} Footsteps
         &nbsp;·&nbsp;
-        <a href="/private" class="text-foreground/40 hover:text-foreground/60 transition-colors text-xs">Private</a>
+        <a href="/private" class="text-foreground/20 hover:text-foreground/40 transition-colors text-xs">Private</a>
       </p>
     </footer>
 

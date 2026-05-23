@@ -43,7 +43,6 @@ for (const photo of photos) {
 }
 
 const citiesWithPhotos = cities.filter(c => (photosByCity.get(c.id)?.length ?? 0) > 0);
-const totalPhotos = photos.length;
 
 // Build flat photos array in DOM order for lightbox navigation
 const lightboxPhotos = citiesWithPhotos.flatMap((city) =>
@@ -63,7 +62,7 @@ const eagerPhotoIds = new Set(lightboxPhotos.slice(0, 8).map(p => p.id));
   <div class="mx-auto max-w-7xl px-6 pb-12 pt-16">
     <a
       href="/private"
-      class="mb-8 inline-block text-xs uppercase tracking-widest text-[#fafafa]/40 transition-colors duration-200 hover:text-[#fafafa]/70"
+      class="mb-3 inline-block text-[10px] uppercase tracking-wider text-foreground/30 transition-colors duration-200 hover:text-foreground/60"
     >
       &larr; Private
     </a>
@@ -73,20 +72,14 @@ const eagerPhotoIds = new Set(lightboxPhotos.slice(0, 8).map(p => p.id));
     >
       {country.name}
     </h1>
-    <p class="mt-3 text-sm uppercase tracking-widest text-[#fafafa]/40">
-      {citiesWithPhotos.length} {citiesWithPhotos.length === 1 ? "city" : "cities"} &middot; {totalPhotos} {totalPhotos === 1 ? "photograph" : "photographs"}
-    </p>
   </div>
 
   {
-    citiesWithPhotos.map((city) => {
+    citiesWithPhotos.map((city, index) => {
       const cityPhotos = photosByCity.get(city.id) ?? [];
       return (
-        <section class="mx-auto max-w-7xl px-6 pb-24">
-          <h2
-            class="mb-8 text-2xl font-bold md:text-3xl"
-            style="font-family: 'Playfair Display', Georgia, serif;"
-          >
+        <section class={`mx-auto max-w-7xl px-6${index > 0 ? " mt-16 md:mt-24" : ""}`}>
+          <h2 class="mb-4 text-sm font-medium uppercase tracking-widest text-foreground/80">
             {city.name}
           </h2>
           <div class="columns-1 gap-4 sm:columns-2 lg:columns-3">
@@ -110,6 +103,12 @@ const eagerPhotoIds = new Set(lightboxPhotos.slice(0, 8).map(p => p.id));
       );
     })
   }
+
+  {citiesWithPhotos.length === 0 && (
+    <p class="mx-auto max-w-7xl px-6 mt-16 text-base text-foreground/40">
+      Photographs from {country.name} will appear here soon.
+    </p>
+  )}
 
   <Lightbox photos={lightboxPhotos} mode="private" />
 </BaseLayout>
