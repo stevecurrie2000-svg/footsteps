@@ -1,4 +1,4 @@
-﻿---
+---
 export const prerender = false;
 
 import { env } from "cloudflare:workers";
@@ -13,11 +13,14 @@ type CountryRow = {
   slug: string;
   name: string;
   thumbnail_key: string | null;
+  thumbnail_width: number | null;
+  thumbnail_height: number | null;
 };
 
 const { results: countries } = await env.DB
   .prepare(
-    `SELECT c.id, c.slug, c.name, p.r2_key_thumb AS thumbnail_key
+    `SELECT c.id, c.slug, c.name, p.r2_key_thumb AS thumbnail_key,
+            p.width AS thumbnail_width, p.height AS thumbnail_height
      FROM countries c
      LEFT JOIN photos p ON p.id = c.private_thumbnail_photo_id
      WHERE EXISTS (
@@ -32,46 +35,38 @@ const { results: countries } = await env.DB
 ---
 
 <BaseLayout title="Private — Footsteps" isPrivate={true}>
-  <div class="mx-auto max-w-7xl px-6 pb-16 pt-16">
-    <h1
-      class="mb-12 text-5xl font-bold md:text-7xl"
-      style="font-family: 'Playfair Display', Georgia, serif;"
-    >
-      Private
-    </h1>
-
+  <section class="mx-auto max-w-7xl px-6 pt-12 pb-24 md:pt-16">
     {countries.length === 0 ? (
-      <p class="text-sm uppercase tracking-widest text-[#fafafa]/30">
+      <p class="text-sm uppercase tracking-widest text-foreground/30">
         No private photographs yet.
       </p>
     ) : (
-      <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 md:gap-4">
         {countries.map((country) => (
           <a
             href={`/private/countries/${country.slug}`}
-            class="group block overflow-hidden rounded"
+            class="group relative block aspect-square overflow-hidden bg-zinc-800 transition-opacity duration-300 hover:opacity-90"
           >
             {country.thumbnail_key && (
-              <div class="aspect-[4/3] overflow-hidden">
-                <img
-                  src={`/i/${country.thumbnail_key}`}
-                  alt=""
-                  loading="lazy"
-                  class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                />
-              </div>
+              <img
+                src={`/i/${country.thumbnail_key}`}
+                alt=""
+                class="absolute inset-0 h-full w-full object-cover"
+                loading="eager"
+                decoding="async"
+                {...(country.thumbnail_width && country.thumbnail_height
+                  ? { width: country.thumbnail_width, height: country.thumbnail_height }
+                  : {})}
+              />
             )}
-            <div class="py-4">
-              <h2
-                class="text-xl font-bold"
-                style="font-family: 'Playfair Display', Georgia, serif;"
-              >
+            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/40 to-transparent p-4">
+              <span class="font-sans text-sm font-medium uppercase tracking-widest text-white">
                 {country.name}
-              </h2>
+              </span>
             </div>
           </a>
         ))}
       </div>
     )}
-  </div>
+  </section>
 </BaseLayout>
