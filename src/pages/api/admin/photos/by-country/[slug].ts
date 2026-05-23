@@ -21,7 +21,7 @@ const SELECT = `
 `;
 
 export const GET: APIRoute = async ({ request, params }) => {
-  const auth = requireAdmin(request);
+  const auth = await requireAdmin(request);
   if (auth instanceof Response) return auth;
 
   const slug = params.slug ?? "";

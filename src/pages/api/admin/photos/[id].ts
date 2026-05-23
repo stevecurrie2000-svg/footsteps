@@ -21,7 +21,7 @@ type PhotoState = {
 };
 
 export const PATCH: APIRoute = async ({ request, params }) => {
-  const auth = requireAdmin(request);
+  const auth = await requireAdmin(request);
   if (auth instanceof Response) return auth;
 
   const id = params.id ?? "";
@@ -128,7 +128,7 @@ export const PATCH: APIRoute = async ({ request, params }) => {
 };
 
 export const DELETE: APIRoute = async ({ request, params }) => {
-  const auth = requireAdmin(request);
+  const auth = await requireAdmin(request);
   if (auth instanceof Response) return auth;
 
   const id = params.id ?? "";

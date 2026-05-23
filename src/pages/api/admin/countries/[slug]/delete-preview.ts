@@ -5,7 +5,7 @@ import { env } from "cloudflare:workers";
 import { requireAdmin } from "../../../../../lib/admin-auth";
 
 export const GET: APIRoute = async ({ request, params }) => {
-  const auth = requireAdmin(request);
+  const auth = await requireAdmin(request);
   if (auth instanceof Response) return auth;
 
   const slug = params.slug ?? "";

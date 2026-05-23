@@ -1,5 +1,7 @@
 import { env } from "cloudflare:workers";
 import type { APIRoute } from "astro";
+import { validateAccessJwt } from "../../lib/access-jwt";
+import { PRIVATE_AUD } from "../../lib/access-config";
 
 export const GET: APIRoute = async ({ params, request }) => {
   const key = params.key;
@@ -18,8 +20,8 @@ export const GET: APIRoute = async ({ params, request }) => {
   if (!row) return new Response("Not Found", { status: 404 });
 
   if (row.is_public === 0) {
-    const jwt = request.headers.get("Cf-Access-Jwt-Assertion");
-    if (!jwt) return new Response("Not Found", { status: 404 });
+    const email = await validateAccessJwt({ request, audience: PRIVATE_AUD, env });
+    if (!email) return new Response("Not Found", { status: 404 });
   }
 
   const obj = await env.PHOTOS.get(key);

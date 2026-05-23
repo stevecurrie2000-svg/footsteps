@@ -1,11 +1,11 @@
----
+﻿---
 export const prerender = false;
 
 import { env } from "cloudflare:workers";
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { requirePrivateViewer } from "../../lib/private-auth";
 
-const auth = requirePrivateViewer(Astro.request);
+const auth = await requirePrivateViewer(Astro.request);
 if (auth instanceof Response) return auth;
 
 type CountryRow = {

@@ -1,11 +1,11 @@
----
+﻿---
 export const prerender = false;
 
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import Lightbox from "../../../components/Lightbox.astro";
 import { requireAdmin } from "../../../lib/admin-auth";
 
-const auth = requireAdmin(Astro.request);
+const auth = await requireAdmin(Astro.request);
 if (auth instanceof Response) return auth;
 ---
 

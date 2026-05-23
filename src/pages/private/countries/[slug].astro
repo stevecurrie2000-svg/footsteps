@@ -6,7 +6,7 @@ import BaseLayout from "../../../layouts/BaseLayout.astro";
 import Lightbox from "../../../components/Lightbox.astro";
 import { requirePrivateViewer } from "../../../lib/private-auth";
 
-const auth = requirePrivateViewer(Astro.request);
+const auth = await requirePrivateViewer(Astro.request);
 if (auth instanceof Response) return auth;
 
 const { slug } = Astro.params;

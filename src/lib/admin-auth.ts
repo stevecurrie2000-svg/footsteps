@@ -1,26 +1,36 @@
-/**
- * Slice 1 of Phase 4. Currently relies on the Cf-Access-Authenticated-User-Email
- * header being trustworthy because Cloudflare Access is the only path to this
- * Worker. Phase 6 hardening item: validate the Cf-Access-Jwt-Assertion JWT
- * signature against Cloudflare's JWKS endpoint
- * (https://<team>.cloudflareaccess.com/cdn-cgi/access/certs) to prevent
- * spoofed headers if the Worker ever becomes reachable without Access in front.
- */
+// src/lib/admin-auth.ts
+//
+// Admin route gating. Validates a Cloudflare Access JWT against the
+// Footsteps Admin AUD, then cross-checks the email claim against
+// the admin allowlist.
+//
+// Returns null on any failure; callers convert null into 403.
+//
+// JWT signature validation lives in src/lib/access-jwt.ts; the
+// allowlist below is the final defence-in-depth check.
 
-export const ADMIN_EMAILS: Set<string> = new Set([
-  "stevecurrie2000@gmail.com",
-]);
+import { env } from "cloudflare:workers";
+import { validateAccessJwt } from "./access-jwt";
+import { ADMIN_AUD } from "./access-config";
 
-export function getAdminEmail(request: Request): string | null {
-  const raw = request.headers.get("Cf-Access-Authenticated-User-Email");
-  if (!raw) return null;
-  const email = raw.toLowerCase().trim();
-  return ADMIN_EMAILS.has(email) ? email : null;
+export const ADMIN_EMAILS: Set<string> = new Set(["stevecurrie2000@gmail.com"]);
+
+export async function getAdminEmail(request: Request): Promise<string | null> {
+  const email = await validateAccessJwt({
+    request,
+    audience: ADMIN_AUD,
+    env,
+  });
+  if (!email) return null;
+  if (!ADMIN_EMAILS.has(email)) return null;
+  return email;
 }
 
-export function requireAdmin(request: Request): { email: string } | Response {
-  const email = getAdminEmail(request);
-  if (email === null) {
+export async function requireAdmin(
+  request: Request
+): Promise<{ email: string } | Response> {
+  const email = await getAdminEmail(request);
+  if (!email) {
     return new Response("Forbidden", { status: 403 });
   }
   return { email };

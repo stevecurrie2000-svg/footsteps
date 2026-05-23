@@ -13,7 +13,7 @@ function json(body: unknown, status = 200) {
 }
 
 export const POST: APIRoute = async ({ request, params }) => {
-  const auth = requireAdmin(request);
+  const auth = await requireAdmin(request);
   if (auth instanceof Response) return auth;
 
   const slug = params.slug ?? "";
@@ -47,7 +47,7 @@ export const POST: APIRoute = async ({ request, params }) => {
 };
 
 export const PATCH: APIRoute = async ({ request, params }) => {
-  const auth = requireAdmin(request);
+  const auth = await requireAdmin(request);
   if (auth instanceof Response) return auth;
 
   const slug = params.slug ?? "";
@@ -105,7 +105,7 @@ export const PATCH: APIRoute = async ({ request, params }) => {
 };
 
 export const DELETE: APIRoute = async ({ request, params }) => {
-  const auth = requireAdmin(request);
+  const auth = await requireAdmin(request);
   if (auth instanceof Response) return auth;
 
   const slug = params.slug ?? "";

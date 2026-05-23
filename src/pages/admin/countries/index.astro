@@ -1,11 +1,11 @@
----
+﻿---
 export const prerender = false;
 
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import { requireAdmin } from "../../../lib/admin-auth";
 import AdminModal from "../../../components/AdminModal.astro";
 
-const adminCheck = requireAdmin(Astro.request);
+const adminCheck = await requireAdmin(Astro.request);
 if (adminCheck instanceof Response) return adminCheck;
 ---
 

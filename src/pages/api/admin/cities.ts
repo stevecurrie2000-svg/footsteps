@@ -1,4 +1,4 @@
-export const prerender = false;
+﻿export const prerender = false;
 
 import type { APIRoute } from "astro";
 import { env } from "cloudflare:workers";
@@ -8,7 +8,7 @@ import { slugify } from "../../../lib/nominatim";
 type CityRow = { slug: string; name: string };
 
 export const GET: APIRoute = async ({ request }) => {
-  const auth = requireAdmin(request);
+  const auth = await requireAdmin(request);
   if (auth instanceof Response) return auth;
 
   const slug = new URL(request.url).searchParams.get("country");
@@ -42,7 +42,7 @@ export const GET: APIRoute = async ({ request }) => {
 };
 
 export const POST: APIRoute = async ({ request }) => {
-  const auth = requireAdmin(request);
+  const auth = await requireAdmin(request);
   if (auth instanceof Response) return auth;
 
   let body: { country_slug?: string; name?: string };

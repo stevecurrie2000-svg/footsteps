@@ -1,4 +1,4 @@
-export const prerender = false;
+﻿export const prerender = false;
 
 import type { APIRoute } from "astro";
 import { env } from "cloudflare:workers";
@@ -26,7 +26,7 @@ type PhotoRow = {
 };
 
 export const GET: APIRoute = async ({ request }) => {
-  const auth = requireAdmin(request);
+  const auth = await requireAdmin(request);
   if (auth instanceof Response) return auth;
 
   const url = new URL(request.url);
