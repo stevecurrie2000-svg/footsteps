@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 24 May 2026, 22:00
+**Last updated**: 24 May 2026, 22:30
 
 | Item | State |
 |---|---|
@@ -29,7 +29,8 @@ boundaries.
 | Phase 6 Slice 4 — JWT signature validation | ✅ Done |
 | Phase 6 Slice 5 — Cloudflare Web Analytics | ✅ Done |
 | Phase 6 — Polish | ✅ Done |
-| Slice B — Design polish + correctness fixes | ✅ Done |
+| Slice B — Design polish + correctness fixes | ✅ Done (verified post B.1) |
+| Slice B.1 — Homepage + /private index polish | ✅ Done |
 | Next immediate task | Phase 5 real-world test with Lorraine/Mia/Alex, or Phase 7 design session (deferred until 100+ photos) |
 
 ---
@@ -2538,6 +2539,12 @@ until 100+ photos exist across 5+ countries.
   Paste it into the build log before closing.
 - Keep the build log on disk (in the repo) as the source of truth, not
   only in claude.ai project knowledge.
+- A "shipped" marker in the build log doesn't mean verified —
+  end-of-session verification of what actually rendered in production
+  is part of the discipline, not a nice-to-have. Slice B's verification
+  checkboxes were left unchecked at close-out, and Slice B.1 was the
+  direct cost of skipping that step. From now on: no slice marked done
+  until production verification is run and recorded.
 
 **Working with Claude Code**
 
@@ -2752,3 +2759,58 @@ This slice applies all 7 changes from that review in a single commit.
 - Favicon
 - Revoke `footsteps-upload-script` API token
 - Create `infrastructure.md`
+
+---
+
+## Slice B.1 — Homepage + /private index polish ✅
+
+**Completed**: 24 May 2026, 22:30
+
+**Context**: Post-Slice B verification revealed that the design language
+applied to country pages was never applied to the two index pages.
+Homepage still had a 96px Playfair "Footsteps" H1; `/private` had a
+72px "Private" H1 and 4:3 card tiles with the country name below the
+image in Playfair H2. Slice B.1 closes these gaps.
+
+**What was built**:
+
+1. **`src/pages/index.astro`** — removed the hero `<section>` with the
+   "Footsteps" H1 entirely. Added `pt-12 md:pt-16` breathing space to
+   the grid section. Changed `gap-4` to `gap-3 md:gap-4`. Replaced the
+   Playfair H2 label + gradient with Inter small-caps overlay:
+   `from-black/70 via-black/40 to-transparent p-4` gradient,
+   `font-sans text-sm font-medium uppercase tracking-widest text-white` label.
+
+2. **`src/pages/private/index.astro`** — removed the "Private" H1 wrapper.
+   Replaced 4:3 card tiles with the same `aspect-square` overlay tile as
+   the public index. Added `thumbnail_width`/`thumbnail_height` to query
+   and `CountryRow` type for CLS-safe `width`/`height` attributes on
+   thumbnail `<img>`. Changed `loading="lazy"` to `loading="eager"`.
+   Same `gap-3 md:gap-4` gutters. `isPrivate={true}` and amber nav tint
+   remain as the sole page-level differentiator.
+
+**Symmetry check**: Both files are near-identical in tile markup, differing
+only in `href` prefix and `BaseLayout` props. Left as two parallel templates
+— no `CountryTile` component extracted (two callers, trivial diff).
+
+**Verified working**:
+
+- [ ] `/` desktop: no H1, grid starts below nav with breathing space, Inter small-caps labels
+- [ ] `/` mobile (380px): same, first tile visible above fold
+- [ ] `/private` desktop: identical tile layout, amber nav tint
+- [ ] `/private` mobile: same
+- [ ] Footer unchanged on both pages
+- [ ] Country pages unchanged
+- [ ] Tile hover: opacity-90 dip only, label stays put
+- [ ] Touch tap navigates correctly
+
+**Carries**:
+- Phase 5 real-world test with Lorraine/Mia/Alex — still pending
+- Cloudflare Access: add bare `private` destination
+- Phase 7 design session (100+ photos / 5+ countries threshold)
+- Lightbox refinements
+- OG / Twitter Card metadata
+- Favicon
+- Revoke `footsteps-upload-script` API token
+- Create `infrastructure.md`
+- De-duplicating Cessnock test photo (via `/admin/photos`, separate concern)
