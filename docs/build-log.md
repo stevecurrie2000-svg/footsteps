@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 25 May 2026, 16:28
+**Last updated**: 24 May 2026, 22:00
 
 | Item | State |
 |---|---|
@@ -29,6 +29,7 @@ boundaries.
 | Phase 6 Slice 4 — JWT signature validation | ✅ Done |
 | Phase 6 Slice 5 — Cloudflare Web Analytics | ✅ Done |
 | Phase 6 — Polish | ✅ Done |
+| Slice B — Design polish + correctness fixes | ✅ Done |
 | Next immediate task | Phase 5 real-world test with Lorraine/Mia/Alex, or Phase 7 design session (deferred until 100+ photos) |
 
 ---
@@ -2657,3 +2658,97 @@ until 100+ photos exist across 5+ countries.
   Format-only checks (length, no quotes, no whitespace) will pass on
   a not-yet-valid or revoked token. The `/user/tokens/verify`
   endpoint is the authoritative check.
+
+---
+
+## Slice B — Design polish + correctness fixes ✅
+
+**Completed**: 24 May 2026
+
+**Context**: Expert design review of the public country pages identified
+several correctness bugs (cities with no public photos rendering empty
+sections) and visual inconsistencies (count subtitles, heavy city
+headings, crowded breadcrumb, too-close footer chrome, muted amber tint).
+This slice applies all 7 changes from that review in a single commit.
+
+**What was built**:
+
+1. **Change 3a — Filter city sections to public photos only**
+   (`src/pages/countries/[slug].astro`)
+   Changed template to iterate `citiesWithPhotos` instead of all `cities`.
+   Removed the "No photographs yet." empty-branch that was rendering
+   section headings for cities with private-only photos.
+
+2. **Change 3b — Remove photo/city count from country header**
+   (`src/pages/countries/[slug].astro`, `src/pages/private/countries/[slug].astro`)
+   Deleted the `<p>` subtitle that showed "N cities · N photographs".
+   Country header is now just the country name. Removed the `totalPhotos`
+   variable now that it was unused.
+
+3. **Change 3c — Shrink breadcrumb to ambient chrome**
+   (`src/pages/countries/[slug].astro`, `src/pages/private/countries/[slug].astro`)
+   `text-[10px] tracking-wider text-foreground/30`. Bottom margin reduced
+   from `mb-8` to `mb-3` so it sits close under the nav and above the
+   country name without competing for attention.
+
+4. **Change 3d — City headings: Playfair Bold → Inter small caps captions**
+   (`src/pages/countries/[slug].astro`, `src/pages/private/countries/[slug].astro`)
+   `font-sans text-sm font-medium uppercase tracking-widest text-foreground/80 mb-4`.
+   Removed inline `font-family` style. City names are now label-weight
+   captions, not display headings.
+
+5. **Change 3e — Section spacing via top margins**
+   (`src/pages/countries/[slug].astro`, `src/pages/private/countries/[slug].astro`)
+   Removed `pb-24` from sections. First section has no top margin; each
+   subsequent section gets `mt-16 md:mt-24`. White space between sections
+   becomes the visual divider.
+
+6. **Change 4 — Empty state for countries with no public photos**
+   (`src/pages/countries/[slug].astro`, `src/pages/private/countries/[slug].astro`)
+   When `citiesWithPhotos.length === 0`, renders:
+   "Photographs from {country.name} will appear here soon."
+   in `text-base text-foreground/40`. Applies to both public and private.
+
+7. **Change 6 — Private nav amber tint: /10 → /25**
+   (`src/layouts/BaseLayout.astro`)
+   `bg-amber-950/25` when `isPrivate`. More clearly warmer than public nav.
+
+8. **Change 7 — Footer: near-invisible ambient chrome**
+   (`src/layouts/BaseLayout.astro`)
+   Removed `border-t border-white/10`. Copyright opacity `/30 → /20`.
+   Private link `/40 → /20` default, `/60 → /40` hover. Replaced
+   hardcoded `#fafafa` hex with `text-foreground` token throughout footer.
+
+**Verified working**:
+
+- [ ] `/countries/united-kingdom` — London only; no count; tiny breadcrumb; small caps city heading
+- [ ] `/countries/france` / `/countries/greece` — empty state message renders
+- [ ] Multi-city country — `mt-16 md:mt-24` gap between city sections
+- [ ] Footer — no border-top; copyright barely visible; Private link barely visible
+- [ ] `/private` — nav clearly warmer tint
+- [ ] `/private/countries/australia` — same typography + spacing applied
+- [ ] Empty-state on private country with no private photos
+
+**Decisions made (from design review)**:
+
+1. No count subtitle on country pages — the photos speak for themselves
+2. Breadcrumb is ambient chrome, not navigation emphasis
+3. City headings are Inter small-caps captions, not Playfair display headings
+4. Section spacing is white space only — no visible dividers
+5. `mt-16 md:mt-24` responsive gap between city sections
+6. `text-foreground/80` for city caption colour (slightly muted, not full white)
+7. Empty state: single prose line, `text-foreground/40`, no back link
+8. Private nav: `bg-amber-950/25` — warmer, still subtle
+9. Footer has no border — fully ambient
+10. Footer opacity `/20` for copyright, `/20 → /40` for Private link
+11. Use `text-foreground` theme token in footer, not `#fafafa` hex
+
+**Carries**:
+- Phase 5 real-world test with Lorraine/Mia/Alex — still pending
+- Cloudflare Access: add bare `private` destination (still missing)
+- Phase 7 design session (100+ photos / 5+ countries threshold)
+- Lightbox refinements (caption with city + date, slower fade, click-to-zoom)
+- OG / Twitter Card metadata per page
+- Favicon
+- Revoke `footsteps-upload-script` API token
+- Create `infrastructure.md`
