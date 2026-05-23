@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 24 May 2026, 23:30
+**Last updated**: 24 May 2026, 23:55
 
 | Item | State |
 |---|---|
@@ -32,7 +32,8 @@ boundaries.
 | Slice B — Design polish + correctness fixes | ✅ Done (verified post B.1) |
 | Slice B.1 — Homepage + /private index polish | ✅ Done |
 | Slice C — Lightbox, accessibility, social, favicon | ✅ Done |
-| Next immediate task | Phase 5 real-world test with Lorraine/Mia/Alex, or Phase 7 design session (deferred until 100+ photos) |
+| Phase 7 Slice 1 — Homepage map view | ✅ Done (MapTiler key pending from Steve) |
+| Next immediate task | Replace `'YOUR_MAPTILER_KEY_HERE'` in `src/pages/index.astro` (×2), then Phase 5 real-world test |
 
 ---
 
@@ -2934,10 +2935,139 @@ JavaScript for negligible user value.
 **Carries**:
 - Phase 5 real-world test with Lorraine/Mia/Alex — still pending
 - Cloudflare Access: add bare `private` destination
-- Phase 7 design session (100+ photos / 5+ countries threshold)
 - Favicon: check at 16×16 — if toes blur, simplify to big-toe ellipse
 - Backfilling `capture_date` on pre-Slice-C photos (not needed; old photos
   show city-only captions gracefully)
 - De-duplicating Cessnock test photo (via `/admin/photos`)
 - Revoke `footsteps-upload-script` API token
 - Create `infrastructure.md`
+
+---
+
+## Phase 7 Slice 1 — Homepage map view ✅
+
+**Completed**: 24 May 2026, 23:55
+
+**Context**: Adds a dynamic map to `/` showing per-city pins for every city
+with at least one public photo that has GPS data. Progressive-enhancement
+strategy: static placeholder image + HTML/CSS pin overlay works without JS;
+MapLibre GL hydrates the interactive map on scroll-into-view or first
+pointer interaction.
+
+**What was built**
+
+`src/pages/index.astro` — complete rewrite of the frontmatter + template:
+
+1. **Pin query** — per-city centroid of public photos with GPS:
+   ```sql
+   SELECT cities.id AS city_id, cities.name AS city_name,
+          countries.slug AS country_slug, countries.name AS country_name,
+          COUNT(photos.id) AS photo_count,
+          AVG(photos.latitude) AS latitude, AVG(photos.longitude) AS longitude
+   FROM photos
+   JOIN cities ON photos.city_id = cities.id
+   JOIN countries ON photos.country_id = countries.id
+   WHERE photos.is_public = 1
+     AND photos.latitude IS NOT NULL AND photos.longitude IS NOT NULL
+   GROUP BY cities.id
+   HAVING photo_count > 0
+   ```
+   Only `is_public = 1` photos — private data never surfaces on the map.
+
+2. **Bounding box** — defaults to a Europe-tight rectangle
+   (`swLon=-10, swLat=35, neLon=30, neLat=60`), then expands to include
+   any pin outside those bounds. Grows automatically as photos are added
+   outside Europe.
+
+3. **Static placeholder** — MapTiler Static Maps API
+   (`https://api.maptiler.com/maps/dark-matter/static/[bounds]/1200x480.webp?key=...&padding=8`).
+   Dark Matter style, 16:5 aspect ratio. Serves immediately; no JS needed.
+   Key: `MAPTILER_KEY` constant in frontmatter (for URL) and in `<script>`
+   (for MapLibre style URL). Currently `'YOUR_MAPTILER_KEY_HERE'` — must
+   be replaced by Steve (see below).
+
+4. **Three-layer map section** (template):
+   - Layer 0 (`#map-placeholder`): static WebP `<img>`, `loading="lazy"`.
+   - Layer 1 (`#pin-overlay`): CSS-positioned `<a>` anchors with flat
+     Mercator `left`/`top` percentages. Each link navigates to the country
+     page without JS. Dot: `h-2.5 w-2.5 rounded-full bg-foreground shadow`.
+     Tooltip: `opacity-0 group-hover:opacity-100` with city name + count.
+     Links carry `data-pin-*` attributes for the hydration script.
+   - Layer 2 (`#maplibre-mount`): invisible `div` that becomes the MapLibre
+     mount point once hydrated.
+   - Empty state: plain text paragraph when `pins.length === 0`.
+
+5. **Lazy hydration `<script>`** — `IntersectionObserver` with
+   `rootMargin: '200px'` (pre-trigger before the map scrolls into view)
+   + `pointerdown` on the container as a second trigger. Dynamic
+   `import('maplibre-gl')` keeps MapLibre out of the initial bundle.
+   MapLibre CSS injected from unpkg on demand. On `map.on('load')`:
+   cross-fade (mount opacity 1, placeholder + overlay opacity 0).
+   MapLibre markers use `el.style.cssText` (inline styles) rather than
+   Tailwind classes because JIT doesn't scan runtime strings.
+
+`package.json` / `package-lock.json`:
+- `maplibre-gl@^4.5.0` added to `dependencies`. v4.7.1 installed.
+
+**MapTiler key — action required from Steve**
+
+1. Sign up at https://www.maptiler.com (free tier is enough for Footsteps).
+2. Create a new API key; domain-restrict it to `footsteps.gallery` in the
+   key settings (public client-side identifier — source-control safe, but
+   restriction prevents abuse if someone copies it from the page source).
+3. Replace `'YOUR_MAPTILER_KEY_HERE'` in `src/pages/index.astro` in **two
+   places** — the frontmatter `const MAPTILER_KEY` (used in the static
+   placeholder URL) and the same constant in the `<script>` block (used for
+   the MapLibre style JSON URL).
+
+**Design decisions**
+
+- **Progressive enhancement as the baseline.** CSS-positioned anchor dots
+  + static placeholder means the map works without JS — the dots navigate,
+  and the image shows where photos are. MapLibre is an enhancement.
+- **Flat Mercator approximation for CSS pins.** Linear interpolation within
+  the bounding box is not a true Mercator projection, but the error is
+  visually imperceptible at Europe scale. MapLibre supersedes it with
+  accurate projection once loaded.
+- **Europe-first bounding box.** Footsteps is currently a Europe photography
+  project; the box defaults to Europe and expands automatically. If the
+  journey goes further afield (Australia, Philippines), the box grows to
+  include those pins. No code change needed.
+- **MapTiler Dark Matter.** Matches the site's dark `#0a0a0a` palette.
+  Static placeholder and interactive map use the same style — continuity
+  across the cross-fade.
+- **MapLibre on unpkg.** CSS loaded from unpkg at the installed version
+  (`4.7.1`) rather than bundled — avoids adding ~100KB to the initial CSS
+  bundle for a feature only some visitors will trigger.
+
+**Carries**:
+- **Steve: replace MapTiler key** — see above. Both placeholder image and
+  interactive map will fail until the key is set.
+- Slice C verification checklist — still unchecked (production walkthrough
+  of favicon, OG cards, lightbox fade/zoom/pan, contrast needed)
+- Phase 5 real-world test with Lorraine/Mia/Alex — still pending
+- Cloudflare Access: add bare `private` destination
+- Favicon: check at 16×16 — if toes blur, simplify to big-toe ellipse
+- De-duplicating Cessnock test photo (via `/admin/photos`)
+- Revoke `footsteps-upload-script` API token
+- Create `infrastructure.md` (now has one more entry: MapTiler key +
+  domain restriction to `footsteps.gallery`)
+
+**Lessons learned**
+
+- **Progressive enhancement: build for no-JS first, enhance for JS.** CSS
+  anchor dots that navigate without JS meant the map section was immediately
+  useful before a line of MapLibre code was written. The JS layer is an
+  upgrade, not a requirement.
+- **Flat Mercator is good enough at regional scale.** For a single-continent
+  map, linear interpolation within a bounding box produces pins that are
+  within a pixel or two of their true position. No trigonometry needed; no
+  projection library needed at render time.
+- **Tailwind JIT doesn't scan runtime strings.** MapLibre marker elements
+  created in JS with `el.className = '...'` won't be included in the
+  production CSS bundle. Use `el.style.cssText` or inline CSS for any
+  dynamically created elements.
+- **MapTiler API key is a public client-side identifier.** It appears in the
+  page source and XHR requests. Domain-restriction in the MapTiler dashboard
+  is the appropriate guard, not source-control exclusion. Same posture as
+  the Cloudflare Web Analytics token (Slice 5) and Access AUDs (Slice 4).
