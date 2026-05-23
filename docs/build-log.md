@@ -2553,6 +2553,12 @@ until 100+ photos exist across 5+ countries.
   that fails loudly at deploy time, not at first page load. The MapTiler
   key shipped to production (Phase 7 Slice 1) because nothing in the
   build pipeline objected to the known-bad string.
+- **When a brief sets a runtime identifier via search-and-replace,
+  post-patch verification must include `grep` across the whole `src/`
+  tree for the placeholder string.** The Phase 7 key fix replaced one
+  occurrence and silently left the other, because the success criterion
+  was "visual check the homepage" rather than "grep returns zero matches".
+  Any search-and-replace patch must end with a grep audit before commit.
 
 **Working with Claude Code**
 
@@ -2665,6 +2671,12 @@ until 100+ photos exist across 5+ countries.
 
 **Third-party API integration**
 
+- **Always verify a third-party map style ID against the live API before
+  baking it into a brief.** MapTiler's catalogue of available styles varies
+  per account — `dark-matter` is the canonical OpenMapTiles dark style but
+  isn't auto-available on free accounts; `basic-v2-dark` is. Cheapest
+  verification: hit `style.json?key=X` for each candidate ID before writing
+  the brief.
 - **Diagnose third-party API behaviour with live queries before changing local code.** Five direct Nominatim queries against real coordinates proved the data shape variability; speculating from a failing upload alone would have produced the wrong fix.
 - **Partial wins are wins.** When integrating with external data sources, treat fields independently — don't collapse the whole result to null just because one optional field is missing. Return a discriminated union so callers can act on whatever was resolved.
 - **Suburb vs city is not a hierarchy in Nominatim.** Both fields can be populated simultaneously; which one is the "right" answer depends on whether they differ (Marrickville vs Sydney), not on a fixed field precedence.
@@ -3077,6 +3089,27 @@ pointer interaction.
   page source and XHR requests. Domain-restriction in the MapTiler dashboard
   is the appropriate guard, not source-control exclusion. Same posture as
   the Cloudflare Web Analytics token (Slice 5) and Access AUDs (Slice 4).
+
+---
+
+### Fix: map style + second key placeholder (25 May 2026, 09:10)
+
+**Context**: Two stacked issues left the homepage map non-functional after
+the previous patch.
+
+1. **`dark-matter` style 404** — not available on the free-tier MapTiler
+   account. Replaced with `basic-v2-dark` (minimalist dark basemap with
+   subtle labels; closer to the "quiet chrome, photos dominate" aesthetic
+   than the original intent of `dark-matter`). Both occurrences updated:
+   frontmatter `placeholderUrl` and the MapLibre `style:` URL in the
+   hydration script.
+2. **Second `YOUR_MAPTILER_KEY_HERE` was never replaced** — the previous
+   patch updated the frontmatter `const MAPTILER_KEY` but left the identical
+   constant in the `<script>` block. MapLibre was requesting
+   `style.json?key=YOUR_MAPTILER_KEY_HERE` and getting 403. Both occurrences
+   now confirmed replaced (`grep -r "YOUR_MAPTILER_KEY_HERE" src/` → 0 matches).
+
+`npm run build` clean. Committed and pushed to main.
 
 ---
 

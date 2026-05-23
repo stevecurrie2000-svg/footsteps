@@ -75,7 +75,7 @@ const MAPTILER_KEY = 'rnng4ZJQRqxg61gTfGU6';
 const PLACEHOLDER_WIDTH  = 1200;
 const PLACEHOLDER_HEIGHT = 480;
 const placeholderUrl =
-  `https://api.maptiler.com/maps/dark-matter/static/` +
+  `https://api.maptiler.com/maps/basic-v2-dark/static/` +
   `[${swLon},${swLat},${neLon},${neLat}]/${PLACEHOLDER_WIDTH}x${PLACEHOLDER_HEIGHT}.webp` +
   `?key=${MAPTILER_KEY}&padding=8`;
 
@@ -243,7 +243,7 @@ const placeholderAlt = pins.length === 0
 
       const map = new maplibregl.Map({
         container: 'maplibre-mount',
-        style: `https://api.maptiler.com/maps/dark-matter/style.json?key=${MAPTILER_KEY}`,
+        style: `https://api.maptiler.com/maps/basic-v2-dark/style.json?key=${MAPTILER_KEY}`,
         bounds,
         fitBoundsOptions: { padding: 40 },
         interactive: true,
