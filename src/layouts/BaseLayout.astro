@@ -65,5 +65,13 @@ const { title = "Footsteps", isPrivate = false, isAdmin = false } = Astro.props;
         <a href="/private" class="text-foreground/40 hover:text-foreground/60 transition-colors text-xs">Private</a>
       </p>
     </footer>
+
+    {!isAdmin && !isPrivate && (
+      <script
+        defer
+        src="https://static.cloudflareinsights.com/beacon.min.js"
+        data-cf-beacon='{"token": "3fa86143f5e94390ae9cf85ea5cf46bf"}'
+      />
+    )}
   </body>
 </html>
