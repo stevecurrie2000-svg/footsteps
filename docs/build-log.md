@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 24 May 2026, 18:00
+**Last updated**: 25 May 2026, 15:52
 
 | Item | State |
 |---|---|
@@ -26,8 +26,9 @@ boundaries.
 | Phase 6 Slice 1 — `/admin/photos` page | ✅ Done |
 | Phase 6 Slice 2 — Lightbox | ✅ Done |
 | Phase 6 Slice 3 — Lazy loading + dimensions + custom 404 | ✅ Done |
-| Phase 6 — Polish (remaining) | ⏳ In progress — analytics, JWT validation |
-| Next immediate task | Phase 6 remaining (analytics, JWT validation) or Phase 5 real-world test with Lorraine/Mia/Alex |
+| Phase 6 Slice 4 — JWT signature validation | ✅ Done |
+| Phase 6 — Polish (remaining) | ⏳ In progress — Cloudflare Analytics only |
+| Next immediate task | Cloudflare Analytics (last Phase 6 item) or Phase 5 real-world test with Lorraine/Mia/Alex |
 
 ---
 
@@ -2337,6 +2338,106 @@ replacing the default Worker 404 site-wide.
 - `footsteps-upload-script` API token — still pending revocation
 - `docs/footsteps_architecture_post_phase_3.svg` — still untracked
 - Node 20 deprecation on action wrappers — bump `@v5` when stable
+
+---
+
+### Session: Phase 6 Slice 4 — JWT signature validation (25 May 2026, 15:52)
+
+**Context**: Phase 6 hardening item promoted from a JSDoc note in
+`admin-auth.ts` (recorded in the Phase 4 Slice 1 session) to a
+dedicated slice. `requireAdmin` and `requirePrivateViewer` previously
+trusted the `Cf-Access-Authenticated-User-Email` header without
+validating the accompanying `Cf-Access-Jwt-Assertion` JWT. This slice
+closes that gap.
+
+**What was built**
+
+- `npm install jose` (added to package.json + package-lock.json)
+- `src/lib/access-config.ts` (new) — team domain, issuer URL, JWKS URL,
+  both AUDs (`ADMIN_AUD`, `PRIVATE_AUD`), shared `createRemoteJWKSet`
+  instance, dev-bypass helper with belt-and-braces runtime CF-Ray check
+- `src/lib/access-jwt.ts` (new) — shared validator
+  `validateAccessJwt({ request, audience, env })`. Signature + iss +
+  aud + exp + nbf checks via `jose.jwtVerify`; structured
+  `console.warn` JSON log on failure with route, reason, email, timestamp
+- `src/lib/admin-auth.ts` (rewritten) — now async; calls validator with
+  `ADMIN_AUD`, then cross-checks email against `ADMIN_EMAILS` allowlist.
+  Returns 403 on failure
+- `src/lib/private-auth.ts` (rewritten) — now async; calls validator
+  with `PRIVATE_AUD`, allowlist cross-check, returns 404 redirect on
+  failure (preserves "section's existence is hidden" property)
+- `src/pages/i/[key].ts` (edit) — private photo branch now calls
+  validator with `PRIVATE_AUD`. No allowlist re-check (Access policy is
+  the source of truth for `/i/*` access; audience check prevents
+  cross-AUD token reuse)
+- All 19 `requireAdmin` call sites + 2 `requirePrivateViewer` call sites
+  updated to `await` (both helpers are now async)
+- `.gitignore` updated to exclude `.dev.vars`
+- `.dev.vars` created at project root with `ACCESS_DEV_BYPASS=true`
+  (local only, gitignored)
+
+**Design decisions** (locked in claude.ai design session, 25 May 2026)
+
+1. Library: `jose` (industry standard, Workers-compatible, ~15KB)
+2. JWKS caching: `createRemoteJWKSet` defaults — auto-refetch on kid
+   miss (Cloudflare rotates keys periodically), built-in cooldown
+3. Claims validated: signature + iss + aud + exp + nbf + email allowlist
+4. Shared config in `access-config.ts` — AUDs are public identifiers,
+   not secrets; no env vars needed
+5. Failure responses unchanged (admin 403, private 404 redirect) + new
+   structured JSON logs on every validation failure
+6. JWKS outage: fail-closed
+7. Local dev: `ACCESS_DEV_BYPASS=true` in `.dev.vars`, second-gated by
+   CF-Ray absence check (prevents the bypass firing in production)
+
+**AUD values** (public identifiers — in source control)
+
+- `ADMIN_AUD`:   `bafdabb557e52a26bdc2a4dba3f5f14c4d134c7516c0fe88c8fdf1d81f9a8152`
+- `PRIVATE_AUD`: `df9c357e79378370ed071fbab914a7d3cbdc3d10bc0b8768abf0402dc9f53277`
+- Team domain: `silent-bonus-1d5b.cloudflareaccess.com`
+
+**Build**: `npm run build` clean, no TypeScript errors.
+
+**Commits**: `feat: phase 6 slice 4 — JWT signature validation against Cloudflare Access JWKS` (d899f59). Pushed to main; deploy in progress.
+
+**Carries (unchanged)**
+
+- Phase 5 real-world test with Lorraine/Mia/Alex — still pending
+- Phase 7 design session (public homepage map view) — deferred until
+  100+ photos exist
+- `infrastructure.md` doc — still not created
+- `footsteps-upload-script` API token — still pending revocation
+- `docs/footsteps_architecture_post_phase_3.svg` — still untracked
+- Node 20 deprecation on action wrappers — bump `@v5` when stable
+
+**Decisions / lessons**
+
+- **AUDs are public identifiers, not secrets.** They appear in every JWT
+  we receive and are appropriate for source control. Treating them as
+  secrets via env vars adds deployment friction with no security benefit.
+- **`jose`'s `createRemoteJWKSet` handles key rotation correctly out of
+  the box.** No TTL or manual refresh logic needed — refetch is triggered
+  by an unknown `kid` in the next incoming JWT.
+- **Fail-closed is the right default for auth.** Fail-open keeps the
+  header-trust code path warm in production, which defeats the point of
+  the slice.
+- **Two independent gates on the dev bypass prevent accidents.** Explicit
+  `ACCESS_DEV_BYPASS` env var AND CF-Ray absence check means the bypass
+  cannot fire in a deployed Worker even if the variable is somehow set.
+- **Making helpers async cascades to all callers.** `requireAdmin` and
+  `requirePrivateViewer` each had ~10+ call sites that all needed
+  `await` added. Bulk sed replacement across bracket-named files
+  (e.g. `[id].ts`) requires Bash `sed` rather than PowerShell, because
+  PowerShell 5.1's `Get-Content` interprets brackets in paths as
+  wildcards unless `-LiteralPath` is used.
+
+**Phase 6 status after this slice**
+
+- ✅ Slice 1 — `/admin/photos`
+- ✅ Slice 2 — Lightbox
+- ✅ Slice 3 — Lazy loading + dimensions + custom 404
+- ✅ Slice 4 — JWT signature validation (this session)
+- ⏳ Cloudflare Analytics (last Phase 6 item)
 
 ---
 
