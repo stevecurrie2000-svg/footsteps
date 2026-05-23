@@ -7,9 +7,12 @@ const { slug } = Astro.params;
 
 // Fetch the country — 404 if the slug doesn't exist
 const country = await env.DB
-  .prepare("SELECT id, slug, name FROM countries WHERE slug = ?")
+  .prepare(`SELECT c.id, c.slug, c.name, p.r2_key_medium AS thumbnail_r2_key_medium
+            FROM countries c
+            LEFT JOIN photos p ON p.id = c.public_thumbnail_photo_id
+            WHERE c.slug = ?`)
   .bind(slug)
-  .first<{ id: number; slug: string; name: string }>();
+  .first<{ id: number; slug: string; name: string; thumbnail_r2_key_medium: string | null }>();
 
 if (!country) {
   return new Response(null, { status: 404, statusText: "Not Found" });
@@ -24,13 +27,13 @@ const { results: cities } = await env.DB
 // Fetch public photos for this country, ordered for a consistent layout
 const { results: photos } = await env.DB
   .prepare(`
-    SELECT id, city_id, r2_key_thumb, r2_key_medium, r2_key_full, caption, width, height
+    SELECT id, city_id, r2_key_thumb, r2_key_medium, r2_key_full, caption, width, height, capture_date
     FROM photos
     WHERE country_id = ? AND is_public = 1
     ORDER BY city_id, capture_date, created_at
   `)
   .bind(country.id)
-  .all<{ id: string; city_id: number; r2_key_thumb: string; r2_key_medium: string; r2_key_full: string; caption: string | null; width: number | null; height: number | null }>();
+  .all<{ id: string; city_id: number; r2_key_thumb: string; r2_key_medium: string; r2_key_full: string; caption: string | null; width: number | null; height: number | null; capture_date: string | null }>();
 
 // Group photos by city_id so each city section can render its own grid
 const photosByCity = new Map<number, typeof photos>();
@@ -49,14 +52,25 @@ const lightboxPhotos = citiesWithPhotos.flatMap((city) =>
     r2_key_medium: p.r2_key_medium,
     r2_key_full: p.r2_key_full,
     city_name: city.name,
+    capture_date: p.capture_date,
   }))
 );
+
+const ogImage = country.thumbnail_r2_key_medium
+  ? `https://footsteps.gallery/i/${country.thumbnail_r2_key_medium}`
+  : undefined;
 
 // First 8 photos in DOM order load eagerly
 const eagerPhotoIds = new Set(lightboxPhotos.slice(0, 8).map(p => p.id));
 ---
 
-<BaseLayout title={`${country.name} — Footsteps`}>
+<BaseLayout
+  title={`${country.name} — Footsteps`}
+  ogTitle={`${country.name} — Footsteps`}
+  ogDescription={`Photographs from ${country.name}.`}
+  ogImage={ogImage}
+  ogType="article"
+>
   <!-- Country heading -->
   <div class="mx-auto max-w-7xl px-6 pb-12 pt-16">
     <a
@@ -105,7 +119,7 @@ const eagerPhotoIds = new Set(lightboxPhotos.slice(0, 8).map(p => p.id));
   }
 
   {citiesWithPhotos.length === 0 && (
-    <p class="mx-auto max-w-7xl px-6 mt-16 text-base text-foreground/40">
+    <p class="mx-auto max-w-7xl px-6 mt-16 text-base text-foreground/60">
       Photographs from {country.name} will appear here soon.
     </p>
   )}

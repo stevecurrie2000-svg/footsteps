@@ -4,6 +4,7 @@ interface Photo {
   r2_key_medium: string;
   r2_key_full: string;
   city_name: string;
+  capture_date?: string | null;
 }
 
 interface Props {
@@ -16,7 +17,7 @@ const { photos, mode } = Astro.props;
 
 <div
   id="lightbox"
-  class="fixed inset-0 z-50 hidden bg-black/95 select-none"
+  class="fixed inset-0 z-50 bg-black select-none transition-opacity duration-200 ease-out opacity-0 pointer-events-none"
   data-mode={mode}
 >
   <!-- Close button -->
@@ -49,8 +50,8 @@ const { photos, mode } = Astro.props;
     aria-label="Next photo"
   >›</button>
 
-  <!-- Image container -->
-  <div class="absolute inset-0 flex items-center justify-center p-8 md:p-16">
+  <!-- Image wrapper — becomes scrollable in zoom mode -->
+  <div id="lightbox-img-wrapper" class="absolute inset-0 flex items-center justify-center p-8 md:p-16">
     <img
       id="lightbox-img"
       src=""
@@ -61,10 +62,10 @@ const { photos, mode } = Astro.props;
     />
   </div>
 
-  <!-- City label -->
+  <!-- Caption -->
   <div
     id="lightbox-city"
-    class="absolute bottom-6 left-1/2 -translate-x-1/2 text-foreground/60 text-xs uppercase tracking-widest"
+    class="absolute bottom-6 left-1/2 -translate-x-1/2 text-foreground/80 text-xs uppercase tracking-widest whitespace-nowrap"
   ></div>
 </div>
 
@@ -73,6 +74,7 @@ const { photos, mode } = Astro.props;
     const lightbox = document.getElementById('lightbox');
     if (!lightbox) return;
 
+    const imageWrapper = document.getElementById('lightbox-img-wrapper');
     const img = document.getElementById('lightbox-img');
     const cityLabel = document.getElementById('lightbox-city');
     const closeBtn = document.getElementById('lightbox-close');
@@ -80,15 +82,32 @@ const { photos, mode } = Astro.props;
     const nextBtn = document.getElementById('lightbox-next');
     const editBtn = document.getElementById('lightbox-edit');
 
-    // Mutable — updated via window.lightboxRefresh for admin page
     let _photos = Array.isArray(photos) ? photos.slice() : [];
     let currentIndex = -1;
     let isOpen = false;
+    let zoomState = 'fit'; // 'fit' | 'zoomed'
+    let isPanning = false;
+    let panStart = { x: 0, y: 0, scrollLeft: 0, scrollTop: 0 };
+    let mouseDownX = 0;
+    let mouseDownY = 0;
 
     function preload(src) {
       if (!src) return;
       const i = new Image();
       i.src = src;
+    }
+
+    function formatCaption(photo) {
+      const city = (photo.city_name || '').toUpperCase();
+      if (!photo.capture_date) return city;
+      const date = new Date(photo.capture_date);
+      if (isNaN(date.getTime())) return city;
+      const formatted = new Intl.DateTimeFormat('en-GB', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      }).format(date).toUpperCase();
+      return city ? `${city} · ${formatted}` : formatted;
     }
 
     function updateBoundaryHints() {
@@ -100,26 +119,97 @@ const { photos, mode } = Astro.props;
       nextBtn.classList.toggle('pointer-events-none', atLast);
     }
 
+    function zoomIn(fracX, fracY) {
+      zoomState = 'zoomed';
+
+      img.src = `/i/${_photos[currentIndex].r2_key_full}`;
+
+      imageWrapper.classList.remove('flex', 'items-center', 'justify-center', 'p-8', 'md:p-16');
+      imageWrapper.classList.add('overflow-auto');
+      imageWrapper.style.touchAction = 'pinch-zoom';
+
+      img.classList.remove('max-h-full', 'max-w-full', 'object-contain');
+      img.classList.add('cursor-grab');
+
+      prevBtn.classList.add('hidden');
+      nextBtn.classList.add('hidden');
+      cityLabel.classList.add('hidden');
+
+      function scrollToFrac() {
+        if (fracX !== undefined && fracY !== undefined) {
+          const scrollX = fracX * imageWrapper.scrollWidth - imageWrapper.clientWidth / 2;
+          const scrollY = fracY * imageWrapper.scrollHeight - imageWrapper.clientHeight / 2;
+          imageWrapper.scrollLeft = Math.max(0, scrollX);
+          imageWrapper.scrollTop = Math.max(0, scrollY);
+        } else {
+          imageWrapper.scrollLeft = (imageWrapper.scrollWidth - imageWrapper.clientWidth) / 2;
+          imageWrapper.scrollTop = (imageWrapper.scrollHeight - imageWrapper.clientHeight) / 2;
+        }
+      }
+
+      if (img.complete && img.naturalWidth > 0) {
+        requestAnimationFrame(scrollToFrac);
+      } else {
+        img.onload = () => { img.onload = null; requestAnimationFrame(scrollToFrac); };
+      }
+    }
+
+    function zoomOut() {
+      zoomState = 'fit';
+
+      img.src = `/i/${_photos[currentIndex].r2_key_medium}`;
+
+      imageWrapper.classList.remove('overflow-auto');
+      imageWrapper.classList.add('flex', 'items-center', 'justify-center', 'p-8', 'md:p-16');
+      imageWrapper.scrollLeft = 0;
+      imageWrapper.scrollTop = 0;
+      imageWrapper.style.touchAction = '';
+
+      img.classList.remove('cursor-grab', 'cursor-grabbing');
+      img.classList.add('max-h-full', 'max-w-full', 'object-contain');
+
+      prevBtn.classList.remove('hidden');
+      nextBtn.classList.remove('hidden');
+      cityLabel.classList.remove('hidden');
+
+      updateBoundaryHints();
+    }
+
+    function resetZoomDOM() {
+      zoomState = 'fit';
+      imageWrapper.classList.remove('overflow-auto');
+      imageWrapper.classList.add('flex', 'items-center', 'justify-center', 'p-8', 'md:p-16');
+      imageWrapper.scrollLeft = 0;
+      imageWrapper.scrollTop = 0;
+      imageWrapper.style.touchAction = '';
+      img.classList.remove('cursor-grab', 'cursor-grabbing');
+      img.classList.add('max-h-full', 'max-w-full', 'object-contain');
+      prevBtn.classList.remove('hidden');
+      nextBtn.classList.remove('hidden');
+      cityLabel.classList.remove('hidden');
+    }
+
     function showPhoto(index, pushHistory = true) {
       if (index < 0 || index >= _photos.length) return;
+
+      if (zoomState === 'zoomed') resetZoomDOM();
+
       currentIndex = index;
       const photo = _photos[index];
 
-      // Load medium variant immediately
       img.src = `/i/${photo.r2_key_medium}`;
       img.alt = photo.city_name || '';
-      cityLabel.textContent = photo.city_name || '';
+      cityLabel.textContent = formatCaption(photo);
 
       // Silently upgrade to full variant once loaded
       const full = new Image();
       full.onload = () => {
-        if (currentIndex === index) {
+        if (currentIndex === index && zoomState === 'fit') {
           img.src = `/i/${photo.r2_key_full}`;
         }
       };
       full.src = `/i/${photo.r2_key_full}`;
 
-      // Preload adjacent mediums
       if (index > 0) preload(`/i/${_photos[index - 1].r2_key_medium}`);
       if (index < _photos.length - 1) preload(`/i/${_photos[index + 1].r2_key_medium}`);
 
@@ -129,10 +219,8 @@ const { photos, mode } = Astro.props;
         const newHash = `#photo=${photo.id}`;
         if (window.location.hash !== newHash) {
           if (isOpen) {
-            // Navigating within open lightbox — replace rather than push
             history.replaceState({ lightbox: true }, '', newHash);
           } else {
-            // Initial open — push so back button closes the lightbox
             history.pushState({ lightbox: true }, '', newHash);
           }
         }
@@ -141,18 +229,24 @@ const { photos, mode } = Astro.props;
 
     function openAt(index) {
       if (index < 0 || index >= _photos.length) return;
-      lightbox.classList.remove('hidden');
+      lightbox.classList.remove('pointer-events-none');
       document.body.style.overflow = 'hidden';
-      // Call showPhoto before setting isOpen so it sees isOpen=false and uses pushState
       showPhoto(index, true);
       isOpen = true;
+      requestAnimationFrame(() => {
+        lightbox.classList.remove('opacity-0');
+      });
     }
 
     function close() {
-      lightbox.classList.add('hidden');
+      if (zoomState === 'zoomed') zoomState = 'fit';
+      lightbox.classList.add('opacity-0');
       document.body.style.overflow = '';
       isOpen = false;
       currentIndex = -1;
+      setTimeout(() => {
+        if (!isOpen) lightbox.classList.add('pointer-events-none');
+      }, 200);
       if (history.state?.lightbox === true) {
         history.back();
       } else if (window.location.hash.startsWith('#photo=')) {
@@ -168,14 +262,62 @@ const { photos, mode } = Astro.props;
       if (currentIndex > 0) showPhoto(currentIndex - 1);
     }
 
-    // Bind click handlers to any unbound [data-lightbox-id] elements
+    // Image click — toggle zoom (stopPropagation keeps it from bubbling to overlay)
+    img.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const moved = Math.abs(e.clientX - mouseDownX) > 5 || Math.abs(e.clientY - mouseDownY) > 5;
+      if (moved) return;
+      if (zoomState === 'fit') {
+        const rect = img.getBoundingClientRect();
+        const fracX = (e.clientX - rect.left) / rect.width;
+        const fracY = (e.clientY - rect.top) / rect.height;
+        zoomIn(fracX, fracY);
+      } else {
+        zoomOut();
+      }
+    });
+
+    // Overlay click — close in fit mode
+    lightbox.addEventListener('click', (e) => {
+      if (zoomState === 'fit' && (e.target === lightbox || e.target === imageWrapper)) close();
+    });
+
+    // Pan when zoomed — mouse drag
+    imageWrapper.addEventListener('mousedown', (e) => {
+      mouseDownX = e.clientX;
+      mouseDownY = e.clientY;
+      if (zoomState !== 'zoomed') return;
+      isPanning = true;
+      panStart = {
+        x: e.clientX,
+        y: e.clientY,
+        scrollLeft: imageWrapper.scrollLeft,
+        scrollTop: imageWrapper.scrollTop
+      };
+      img.classList.remove('cursor-grab');
+      img.classList.add('cursor-grabbing');
+      e.preventDefault();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isPanning) return;
+      imageWrapper.scrollLeft = panStart.scrollLeft - (e.clientX - panStart.x);
+      imageWrapper.scrollTop = panStart.scrollTop - (e.clientY - panStart.y);
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!isPanning) return;
+      isPanning = false;
+      img.classList.remove('cursor-grabbing');
+      if (zoomState === 'zoomed') img.classList.add('cursor-grab');
+    });
+
     function bindClickHandlers() {
       document.querySelectorAll('[data-lightbox-id]:not([data-lb-bound])').forEach((el) => {
         el.dataset.lbBound = '1';
         el.addEventListener('click', (e) => {
           e.preventDefault();
           const id = el.getAttribute('data-lightbox-id');
-          // _photos is captured by reference — always reflects latest array
           const index = _photos.findIndex((p) => p.id === id);
           if (index >= 0) openAt(index);
         });
@@ -183,11 +325,10 @@ const { photos, mode } = Astro.props;
       });
     }
 
-    // Called by admin page after each grid render to sync the navigable set
     window.lightboxRefresh = function (newPhotos) {
       if (isOpen) {
-        // Silently close without touching history
-        lightbox.classList.add('hidden');
+        if (zoomState === 'zoomed') resetZoomDOM();
+        lightbox.classList.add('opacity-0', 'pointer-events-none');
         document.body.style.overflow = '';
         isOpen = false;
         currentIndex = -1;
@@ -199,15 +340,12 @@ const { photos, mode } = Astro.props;
       bindClickHandlers();
     };
 
-    // Initial bind
     bindClickHandlers();
 
-    // Chrome buttons
     closeBtn.addEventListener('click', close);
     prevBtn.addEventListener('click', prev);
     nextBtn.addEventListener('click', next);
 
-    // Edit button (admin mode) — dispatches event for the page to open its edit modal
     if (editBtn) {
       editBtn.addEventListener('click', () => {
         const photo = _photos[currentIndex];
@@ -217,22 +355,20 @@ const { photos, mode } = Astro.props;
       });
     }
 
-    // Keyboard
     document.addEventListener('keydown', (e) => {
       if (!isOpen) return;
       if (e.key === 'Escape') {
-        // Yield to any open dialog (e.g. admin edit modal)
         const openDialog = document.querySelector('[role="dialog"]:not(.hidden)');
         if (openDialog) return;
         close();
-      } else if (e.key === 'ArrowLeft') {
+      } else if (e.key === 'ArrowLeft' && zoomState === 'fit') {
         prev();
-      } else if (e.key === 'ArrowRight') {
+      } else if (e.key === 'ArrowRight' && zoomState === 'fit') {
         next();
       }
     });
 
-    // Touch / swipe
+    // Touch / swipe (fit mode only; zoom mode uses native scroll + pinch)
     let touchStartX = 0;
     let touchStartY = 0;
     lightbox.addEventListener('touchstart', (e) => {
@@ -240,6 +376,7 @@ const { photos, mode } = Astro.props;
       touchStartY = e.changedTouches[0].screenY;
     }, { passive: true });
     lightbox.addEventListener('touchend', (e) => {
+      if (zoomState === 'zoomed') return;
       const touchEndX = e.changedTouches[0].screenX;
       const touchEndY = e.changedTouches[0].screenY;
       const deltaX = touchEndX - touchStartX;
@@ -254,16 +391,17 @@ const { photos, mode } = Astro.props;
       }
     }, { passive: true });
 
-    // History navigation
     window.addEventListener('popstate', (e) => {
       if (isOpen && e.state?.lightbox !== true) {
-        // Back button pressed — close without re-calling history.back
-        lightbox.classList.add('hidden');
+        if (zoomState === 'zoomed') zoomState = 'fit';
+        lightbox.classList.add('opacity-0');
         document.body.style.overflow = '';
         isOpen = false;
         currentIndex = -1;
+        setTimeout(() => {
+          if (!isOpen) lightbox.classList.add('pointer-events-none');
+        }, 200);
       } else if (!isOpen && e.state?.lightbox === true) {
-        // Forward into a lightbox state — reopen from hash
         openFromHash(false);
       }
     });
@@ -278,15 +416,17 @@ const { photos, mode } = Astro.props;
         if (isOpen) {
           showPhoto(index, pushHistory);
         } else {
-          lightbox.classList.remove('hidden');
+          lightbox.classList.remove('pointer-events-none');
           document.body.style.overflow = 'hidden';
           showPhoto(index, pushHistory);
           isOpen = true;
+          requestAnimationFrame(() => {
+            lightbox.classList.remove('opacity-0');
+          });
         }
       }
     }
 
-    // On page load, open from hash if present
     if (window.location.hash.startsWith('#photo=')) {
       openFromHash(false);
     }

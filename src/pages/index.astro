@@ -17,9 +17,23 @@ const { results: countries } = await env.DB
      ) DESC`
   )
   .all<{ id: number; slug: string; name: string; thumbnail_key: string | null; thumbnail_width: number | null; thumbnail_height: number | null }>();
+
+const coverPhoto = await env.DB
+  .prepare("SELECT r2_key_medium FROM photos WHERE is_public = 1 ORDER BY created_at DESC LIMIT 1")
+  .first<{ r2_key_medium: string }>();
+
+const ogImage = coverPhoto
+  ? `https://footsteps.gallery/i/${coverPhoto.r2_key_medium}`
+  : undefined;
 ---
 
-<BaseLayout title="Footsteps — Europe Photography">
+<BaseLayout
+  title="Footsteps — Europe Photography"
+  ogTitle="Footsteps"
+  ogDescription="A photographer's journey through Europe."
+  ogImage={ogImage}
+  ogType="website"
+>
   <section class="mx-auto max-w-7xl px-6 pt-12 pb-24 md:pt-16">
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 md:gap-4">
       {

@@ -6,8 +6,12 @@ interface Props {
   title?: string;
   isPrivate?: boolean;
   isAdmin?: boolean;
+  ogTitle?: string;
+  ogDescription?: string;
+  ogImage?: string;
+  ogType?: 'website' | 'article';
 }
-const { title = "Footsteps", isPrivate = false, isAdmin = false } = Astro.props;
+const { title = "Footsteps", isPrivate = false, isAdmin = false, ogTitle, ogDescription, ogImage, ogType } = Astro.props;
 ---
 
 <!doctype html>
@@ -15,9 +19,21 @@ const { title = "Footsteps", isPrivate = false, isAdmin = false } = Astro.props;
   <head>
     <meta charset="utf-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
+    {ogTitle && <meta property="og:title" content={ogTitle} />}
+    {ogTitle && <meta name="twitter:title" content={ogTitle} />}
+    {ogDescription && <meta property="og:description" content={ogDescription} />}
+    {ogDescription && <meta name="twitter:description" content={ogDescription} />}
+    {ogDescription && <meta name="description" content={ogDescription} />}
+    {ogImage && <meta property="og:image" content={ogImage} />}
+    {ogImage && <meta name="twitter:image" content={ogImage} />}
+    {ogImage && <meta name="twitter:card" content="summary_large_image" />}
+    {ogType && <meta property="og:type" content={ogType} />}
+    {ogTitle && <meta property="og:url" content={Astro.url.href} />}
+    {ogTitle && <meta property="og:site_name" content="Footsteps" />}
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

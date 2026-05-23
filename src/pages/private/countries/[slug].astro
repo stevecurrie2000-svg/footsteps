@@ -27,13 +27,13 @@ const { results: cities } = await env.DB
 
 const { results: photos } = await env.DB
   .prepare(`
-    SELECT id, city_id, r2_key_thumb, r2_key_medium, r2_key_full, caption, width, height
+    SELECT id, city_id, r2_key_thumb, r2_key_medium, r2_key_full, caption, width, height, capture_date
     FROM photos
     WHERE country_id = ? AND is_public = 0
     ORDER BY city_id, capture_date, created_at
   `)
   .bind(country.id)
-  .all<{ id: string; city_id: number; r2_key_thumb: string; r2_key_medium: string; r2_key_full: string; caption: string | null; width: number | null; height: number | null }>();
+  .all<{ id: string; city_id: number; r2_key_thumb: string; r2_key_medium: string; r2_key_full: string; caption: string | null; width: number | null; height: number | null; capture_date: string | null }>();
 
 const photosByCity = new Map<number, typeof photos>();
 for (const photo of photos) {
@@ -51,6 +51,7 @@ const lightboxPhotos = citiesWithPhotos.flatMap((city) =>
     r2_key_medium: p.r2_key_medium,
     r2_key_full: p.r2_key_full,
     city_name: city.name,
+    capture_date: p.capture_date,
   }))
 );
 
@@ -105,7 +106,7 @@ const eagerPhotoIds = new Set(lightboxPhotos.slice(0, 8).map(p => p.id));
   }
 
   {citiesWithPhotos.length === 0 && (
-    <p class="mx-auto max-w-7xl px-6 mt-16 text-base text-foreground/40">
+    <p class="mx-auto max-w-7xl px-6 mt-16 text-base text-foreground/60">
       Photographs from {country.name} will appear here soon.
     </p>
   )}
