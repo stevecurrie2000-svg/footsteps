@@ -3,7 +3,7 @@
 import type { APIRoute } from "astro";
 import { env } from "cloudflare:workers";
 import { requireAdmin } from "../../../lib/admin-auth";
-import { slugify } from "../../../lib/nominatim";
+import { slugify, forwardGeocode } from "../../../lib/nominatim";
 
 type CityRow = { slug: string; name: string };
 
@@ -73,8 +73,8 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   const country = await env.DB.prepare(
-    `SELECT id FROM countries WHERE slug = ?`
-  ).bind(countrySlug).first<{ id: number }>();
+    `SELECT id, name FROM countries WHERE slug = ?`
+  ).bind(countrySlug).first<{ id: number; name: string }>();
   if (!country) {
     return new Response(JSON.stringify({ error: "Country not found" }), {
       status: 404,
@@ -82,12 +82,19 @@ export const POST: APIRoute = async ({ request }) => {
     });
   }
 
+  const geo = await forwardGeocode(name, country.name);
+  const cityLat = geo.status === 'ok' ? geo.latitude  : null;
+  const cityLon = geo.status === 'ok' ? geo.longitude : null;
+
   try {
     const inserted = await env.DB.prepare(
-      `INSERT INTO cities (country_id, slug, name) VALUES (?1, ?2, ?3) RETURNING id, slug, name`
-    ).bind(country.id, slug, name).first<{ id: number; slug: string; name: string }>();
+      `INSERT INTO cities (country_id, slug, name, latitude, longitude)
+       VALUES (?1, ?2, ?3, ?4, ?5)
+       RETURNING id, slug, name, latitude, longitude`
+    ).bind(country.id, slug, name, cityLat, cityLon)
+      .first<{ id: number; slug: string; name: string; latitude: number | null; longitude: number | null }>();
 
-    return new Response(JSON.stringify(inserted), {
+    return new Response(JSON.stringify({ ...inserted, geocodeStatus: geo.status }), {
       status: 201,
       headers: { "Content-Type": "application/json" },
     });

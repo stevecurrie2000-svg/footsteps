@@ -23,6 +23,8 @@ type CityRow = {
   slug: string;
   name: string;
   photo_count: number;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 export const GET: APIRoute = async ({ request }) => {
@@ -49,7 +51,7 @@ export const GET: APIRoute = async ({ request }) => {
       `),
       env.DB.prepare(`
         SELECT ci.id, ci.country_id, ci.slug, ci.name,
-          COUNT(p.id) AS photo_count
+          ci.latitude, ci.longitude, COUNT(p.id) AS photo_count
         FROM cities ci
         LEFT JOIN photos p ON p.city_id = ci.id
         GROUP BY ci.id

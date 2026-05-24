@@ -294,6 +294,10 @@ const { email } = auth;
         citySelect.value = `__new__:${geocodedCitySlug}`;
         state.citySlug   = `__new__:${geocodedCitySlug}`;
       }
+      const addNewCityOptL       = document.createElement("option");
+      addNewCityOptL.value       = "__add_new_city__";
+      addNewCityOptL.textContent = "+ Add new city…";
+      citySelect.appendChild(addNewCityOptL);
       citySelect.disabled = false;
     } else {
       const placeholder       = document.createElement("option");
@@ -302,8 +306,16 @@ const { email } = auth;
       placeholder.selected    = true;
       placeholder.textContent = "Choose a city…";
       citySelect.appendChild(placeholder);
+      const addNewCityOptL       = document.createElement("option");
+      addNewCityOptL.value       = "__add_new_city__";
+      addNewCityOptL.textContent = "+ Add new city…";
+      citySelect.appendChild(addNewCityOptL);
+      citySelect.disabled = false;
       state.citySlug = null;
     }
+
+    const cityNewWrapL = document.getElementById(`city-new-wrap-${rowId}`);
+    if (cityNewWrapL) cityNewWrapL.classList.add("hidden");
 
     updateRowValidation(rowId);
     updateButtonState();
@@ -478,7 +490,20 @@ const { email } = auth;
       opt.textContent = c.name;
       countrySelect.appendChild(opt);
     }
+    const addNewCountryOpt       = document.createElement("option");
+    addNewCountryOpt.value       = "__add_new_country__";
+    addNewCountryOpt.textContent = "+ Add new country…";
+    countrySelect.appendChild(addNewCountryOpt);
     countryTd.appendChild(countrySelect);
+    const countryNewWrap = document.createElement("div");
+    countryNewWrap.id = `country-new-wrap-${rowId}`;
+    countryNewWrap.className = "hidden mt-1";
+    const countryNewInput = document.createElement("input") as HTMLInputElement;
+    countryNewInput.type = "text";
+    countryNewInput.placeholder = "Country name, then Enter";
+    countryNewInput.className = "w-full bg-zinc-900 border border-white/30 rounded px-2 py-1 text-xs text-foreground focus:outline-none focus:border-white/60";
+    countryNewWrap.appendChild(countryNewInput);
+    countryTd.appendChild(countryNewWrap);
 
     // 4. City select
     const cityTd     = document.createElement("td");
@@ -497,6 +522,15 @@ const { email } = auth;
     cityPlaceholder.textContent = "Country first";
     citySelect.appendChild(cityPlaceholder);
     cityTd.appendChild(citySelect);
+    const cityNewWrap = document.createElement("div");
+    cityNewWrap.id = `city-new-wrap-${rowId}`;
+    cityNewWrap.className = "hidden mt-1";
+    const cityNewInput = document.createElement("input") as HTMLInputElement;
+    cityNewInput.type = "text";
+    cityNewInput.placeholder = "City name, then Enter";
+    cityNewInput.className = "w-full bg-zinc-900 border border-white/30 rounded px-2 py-1 text-xs text-foreground focus:outline-none focus:border-white/60";
+    cityNewWrap.appendChild(cityNewInput);
+    cityTd.appendChild(cityNewWrap);
 
     // 5. Audience toggle
     const audienceTd     = document.createElement("td");
@@ -535,20 +569,39 @@ const { email } = auth;
       const s   = rows.get(rowId);
       if (!s) return;
       const val = countrySelect.value;
+
+      if (val === "__add_new_country__") {
+        countrySelect.value = s.countrySlug ?? "";
+        countryNewWrap.classList.remove("hidden");
+        countryNewInput.focus();
+        return;
+      }
+
       s.countrySlug = val || null;
 
       if (val.startsWith("__new__:")) {
         // Restore the geocoded __new__ city for this country
+        citySelect.innerHTML = "";
+        citySelect.disabled  = false;
         if (s.geocodedCitySlug) {
-          citySelect.innerHTML = "";
-          citySelect.disabled  = false;
           const o              = document.createElement("option");
           o.value              = `__new__:${s.geocodedCitySlug}`;
           o.textContent        = `${s.geocodedCityName ?? s.geocodedCitySlug} (new)`;
           citySelect.appendChild(o);
           citySelect.value = `__new__:${s.geocodedCitySlug}`;
           s.citySlug       = `__new__:${s.geocodedCitySlug}`;
+        } else {
+          const ph       = document.createElement("option");
+          ph.value       = "";
+          ph.disabled    = true;
+          ph.selected    = true;
+          ph.textContent = "Choose a city…";
+          citySelect.appendChild(ph);
         }
+        const addNewCityOpt1       = document.createElement("option");
+        addNewCityOpt1.value       = "__add_new_city__";
+        addNewCityOpt1.textContent = "+ Add new city…";
+        citySelect.appendChild(addNewCityOpt1);
         updateRowValidation(rowId);
         updateButtonState();
         return;
@@ -586,8 +639,12 @@ const { email } = auth;
           opt.textContent = c.name;
           citySelect.appendChild(opt);
         }
-        citySelect.disabled = false;
       }
+      const addNewCityOpt2       = document.createElement("option");
+      addNewCityOpt2.value       = "__add_new_city__";
+      addNewCityOpt2.textContent = "+ Add new city…";
+      citySelect.appendChild(addNewCityOpt2);
+      citySelect.disabled = false;
       updateRowValidation(rowId);
       updateButtonState();
     });
@@ -595,7 +652,14 @@ const { email } = auth;
     citySelect.addEventListener("change", () => {
       const s = rows.get(rowId);
       if (!s) return;
-      s.citySlug = citySelect.value || null;
+      const val = citySelect.value;
+      if (val === "__add_new_city__") {
+        citySelect.value = s.citySlug ?? "";
+        cityNewWrap.classList.remove("hidden");
+        cityNewInput.focus();
+        return;
+      }
+      s.citySlug = val || null;
       updateRowValidation(rowId);
       updateButtonState();
     });
@@ -614,6 +678,58 @@ const { email } = auth;
       s.isPublic          = true;
       btnPrivate.className = "px-3 py-1 text-xs font-medium text-foreground/40";
       btnPublic.className = "px-3 py-1 text-xs font-medium bg-foreground text-background";
+    });
+
+    countryNewInput.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key !== "Enter") return;
+      const typed = countryNewInput.value.trim();
+      if (!typed) return;
+      const slug = slugify(typed);
+      if (!slug) return;
+      Array.from(countrySelect.options).filter(o => o.value.startsWith("__new__:")).forEach(o => o.remove());
+      const newOpt = document.createElement("option");
+      newOpt.value = `__new__:${slug}`;
+      newOpt.textContent = `${typed} (new)`;
+      const sentinel = countrySelect.querySelector<HTMLOptionElement>('option[value="__add_new_country__"]');
+      if (sentinel) countrySelect.insertBefore(newOpt, sentinel);
+      else countrySelect.appendChild(newOpt);
+      countrySelect.value = `__new__:${slug}`;
+      const s = rows.get(rowId);
+      if (s) { s.countrySlug = `__new__:${slug}`; s.geocodedCountryName = typed; s.citySlug = null; }
+      countryNewWrap.classList.add("hidden");
+      countryNewInput.value = "";
+      citySelect.innerHTML = "";
+      citySelect.disabled = false;
+      const addNewCityOpt3       = document.createElement("option");
+      addNewCityOpt3.value       = "__add_new_city__";
+      addNewCityOpt3.textContent = "+ Add new city…";
+      citySelect.appendChild(addNewCityOpt3);
+      cityNewWrap.classList.remove("hidden");
+      cityNewInput.focus();
+      updateRowValidation(rowId);
+      updateButtonState();
+    });
+
+    cityNewInput.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key !== "Enter") return;
+      const typed = cityNewInput.value.trim();
+      if (!typed) return;
+      const slug = slugify(typed);
+      if (!slug) return;
+      Array.from(citySelect.options).filter(o => o.value.startsWith("__new__:")).forEach(o => o.remove());
+      const newOpt = document.createElement("option");
+      newOpt.value = `__new__:${slug}`;
+      newOpt.textContent = `${typed} (new)`;
+      const sentinel = citySelect.querySelector<HTMLOptionElement>('option[value="__add_new_city__"]');
+      if (sentinel) citySelect.insertBefore(newOpt, sentinel);
+      else citySelect.appendChild(newOpt);
+      citySelect.value = `__new__:${slug}`;
+      const s = rows.get(rowId);
+      if (s) { s.citySlug = `__new__:${slug}`; s.geocodedCityName = typed; }
+      cityNewWrap.classList.add("hidden");
+      cityNewInput.value = "";
+      updateRowValidation(rowId);
+      updateButtonState();
     });
 
     // Show review section; compact drop zone

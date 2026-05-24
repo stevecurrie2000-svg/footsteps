@@ -28,22 +28,22 @@ const ogImage = coverPhoto
   ? `https://footsteps.gallery/i/${coverPhoto.r2_key_medium}`
   : undefined;
 
-// Map pins — per-city centroid of public photos with GPS
+// Map pins — one per city that has coordinates and at least one public photo
 const { results: pinRows } = await env.DB.prepare(`
   SELECT
-    cities.id      AS city_id,
-    cities.name    AS city_name,
-    countries.slug AS country_slug,
-    countries.name AS country_name,
-    COUNT(photos.id)       AS photo_count,
-    AVG(photos.latitude)   AS latitude,
-    AVG(photos.longitude)  AS longitude
-  FROM photos
-  JOIN cities   ON photos.city_id    = cities.id
-  JOIN countries ON photos.country_id = countries.id
+    cities.id        AS city_id,
+    cities.name      AS city_name,
+    cities.latitude,
+    cities.longitude,
+    countries.slug   AS country_slug,
+    countries.name   AS country_name,
+    COUNT(photos.id) AS photo_count
+  FROM cities
+  JOIN countries ON cities.country_id = countries.id
+  JOIN photos    ON photos.city_id    = cities.id
   WHERE photos.is_public = 1
-    AND photos.latitude  IS NOT NULL
-    AND photos.longitude IS NOT NULL
+    AND cities.latitude  IS NOT NULL
+    AND cities.longitude IS NOT NULL
   GROUP BY cities.id
   HAVING photo_count > 0
 `).all<{

@@ -3,7 +3,7 @@
 import type { APIRoute } from "astro";
 import { env } from "cloudflare:workers";
 import { requireAdmin } from "../../../lib/admin-auth";
-import { slugify } from "../../../lib/nominatim";
+import { slugify, forwardGeocode } from "../../../lib/nominatim";
 
 export const POST: APIRoute = async ({ request }) => {
   const auth = await requireAdmin(request);
@@ -11,9 +11,9 @@ export const POST: APIRoute = async ({ request }) => {
 
   const form = await request.formData();
 
-  const country      = ((form.get("country")  as string | null) ?? "").trim();
-  const city         = ((form.get("city")     as string | null) ?? "").trim();
-  const isPublic     = form.get("is_public") === "1";
+  let country      = ((form.get("country")  as string | null) ?? "").trim();
+  let city         = ((form.get("city")     as string | null) ?? "").trim();
+  const isPublic   = form.get("is_public") === "1";
 
   const captureDateRaw     = ((form.get("capture_date")      as string | null) ?? "").trim();
   const latitudeRaw        = ((form.get("latitude")          as string | null) ?? "").trim();
@@ -46,8 +46,20 @@ export const POST: APIRoute = async ({ request }) => {
     ? originalFilenameRaw.slice(0, 255)
     : null;
 
-  const geocodedCountry = ((form.get("geocoded_country") as string | null) ?? "").trim().slice(0, 100);
-  const geocodedCity    = ((form.get("geocoded_city")    as string | null) ?? "").trim().slice(0, 100);
+  let geocodedCountry = ((form.get("geocoded_country") as string | null) ?? "").trim().slice(0, 100);
+  let geocodedCity    = ((form.get("geocoded_city")    as string | null) ?? "").trim().slice(0, 100);
+
+  // Free-text inputs from the upload form normalise into the existing __new__: path
+  const countryFreeText = ((form.get("country_free_text") as string | null) ?? "").trim().slice(0, 100);
+  const cityFreeText    = ((form.get("city_free_text")    as string | null) ?? "").trim().slice(0, 100);
+  if (countryFreeText) {
+    const s = slugify(countryFreeText);
+    if (s) { country = `__new__:${s}`; geocodedCountry = countryFreeText; }
+  }
+  if (cityFreeText) {
+    const s = slugify(cityFreeText);
+    if (s) { city = `__new__:${s}`; geocodedCity = cityFreeText; }
+  }
 
   const widthRaw   = form.get("width")  as string | null;
   const heightRaw  = form.get("height") as string | null;
@@ -131,6 +143,7 @@ export const POST: APIRoute = async ({ request }) => {
 
   // ── Resolve country_id ────────────────────────────────────────────────────
   let countryId: number;
+  let resolvedCountryName: string;
   if (isNewCountry) {
     const inserted = await env.DB.prepare(
       `INSERT INTO countries (slug, name) VALUES (?1, ?2) ON CONFLICT(slug) DO NOTHING RETURNING id`
@@ -149,10 +162,11 @@ export const POST: APIRoute = async ({ request }) => {
       }
       countryId = existing.id;
     }
+    resolvedCountryName = geocodedCountry;
   } else {
     const existing = await env.DB.prepare(
-      `SELECT id FROM countries WHERE slug = ?1`
-    ).bind(countrySlug).first<{ id: number }>();
+      `SELECT id, name FROM countries WHERE slug = ?1`
+    ).bind(countrySlug).first<{ id: number; name: string }>();
     if (!existing) {
       return new Response(JSON.stringify({ error: "Unknown country" }), {
         status: 400,
@@ -160,14 +174,22 @@ export const POST: APIRoute = async ({ request }) => {
       });
     }
     countryId = existing.id;
+    resolvedCountryName = existing.name;
   }
 
   // ── Resolve city_id ───────────────────────────────────────────────────────
   let cityId: number;
+  let cityGeocodeStatus: string | null = null;
   if (isNewCity) {
+    const geo = await forwardGeocode(geocodedCity, resolvedCountryName);
+    cityGeocodeStatus = geo.status;
+    const cityLat = geo.status === 'ok' ? geo.latitude  : null;
+    const cityLon = geo.status === 'ok' ? geo.longitude : null;
+
     const inserted = await env.DB.prepare(
-      `INSERT INTO cities (country_id, slug, name) VALUES (?1, ?2, ?3) ON CONFLICT(country_id, slug) DO NOTHING RETURNING id`
-    ).bind(countryId, citySlug, geocodedCity).first<{ id: number }>();
+      `INSERT INTO cities (country_id, slug, name, latitude, longitude)
+       VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(country_id, slug) DO NOTHING RETURNING id`
+    ).bind(countryId, citySlug, geocodedCity, cityLat, cityLon).first<{ id: number }>();
     if (inserted) {
       cityId = inserted.id;
     } else {
@@ -270,7 +292,14 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   return new Response(
-    JSON.stringify({ id, country, city, is_public: isPublic }),
+    JSON.stringify({
+      id,
+      country: countrySlug,
+      city: citySlug,
+      is_public: isPublic,
+      cityGeocodeStatus,
+      cityName: isNewCity ? geocodedCity : null,
+    }),
     {
       status: 201,
       headers: { "Content-Type": "application/json" },

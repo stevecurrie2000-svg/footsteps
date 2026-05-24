@@ -1,0 +1,175 @@
+<div id="cce-modal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="cce-title">
+  <div id="cce-backdrop" class="absolute inset-0 bg-black/80"></div>
+  <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-background border border-white/20 rounded flex flex-col overflow-hidden">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-white/10">
+      <h2 id="cce-title" class="text-base font-semibold"></h2>
+      <button id="cce-close" class="text-foreground/40 hover:text-foreground text-xl leading-none" aria-label="Close">&times;</button>
+    </div>
+    <div class="p-6 space-y-4">
+      <div class="flex gap-2">
+        <button id="cce-geocode-btn" class="flex-1 bg-white/10 hover:bg-white/20 text-sm px-3 py-2 rounded transition-colors">
+          Run geocode
+        </button>
+      </div>
+      <div id="cce-geocode-result" class="hidden text-sm text-foreground/60 bg-white/5 rounded px-3 py-2"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-foreground/60">Latitude</span>
+          <input id="cce-lat" type="number" step="any" min="-90" max="90"
+            class="bg-white/10 border border-white/20 rounded px-3 py-2 text-foreground focus:outline-none focus:border-white/50"
+            placeholder="e.g. 51.5074" />
+        </label>
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-foreground/60">Longitude</span>
+          <input id="cce-lon" type="number" step="any" min="-180" max="180"
+            class="bg-white/10 border border-white/20 rounded px-3 py-2 text-foreground focus:outline-none focus:border-white/50"
+            placeholder="e.g. -0.1278" />
+        </label>
+      </div>
+      <div id="cce-error" class="hidden text-red-400 text-sm"></div>
+      <div class="flex gap-2 pt-1">
+        <button id="cce-save-btn" class="flex-1 bg-white text-background text-sm font-medium px-3 py-2 rounded hover:bg-white/90 transition-colors">
+          Save
+        </button>
+        <button id="cce-clear-btn" class="bg-white/10 hover:bg-white/20 text-sm px-3 py-2 rounded transition-colors">
+          Clear coords
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script is:inline>
+(function () {
+  var modal    = document.getElementById('cce-modal');
+  var backdrop = document.getElementById('cce-backdrop');
+  var titleEl  = document.getElementById('cce-title');
+  var closeBtn = document.getElementById('cce-close');
+  var geocodeBtn  = document.getElementById('cce-geocode-btn');
+  var geocodeResult = document.getElementById('cce-geocode-result');
+  var latInput = document.getElementById('cce-lat');
+  var lonInput = document.getElementById('cce-lon');
+  var errorEl  = document.getElementById('cce-error');
+  var saveBtn  = document.getElementById('cce-save-btn');
+  var clearBtn = document.getElementById('cce-clear-btn');
+
+  var _cityId   = null;
+  var _resolve  = null;
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.classList.remove('hidden');
+  }
+  function clearError() {
+    errorEl.textContent = '';
+    errorEl.classList.add('hidden');
+  }
+
+  function close() {
+    modal.classList.add('hidden');
+    geocodeResult.classList.add('hidden');
+    geocodeResult.textContent = '';
+    latInput.value = '';
+    lonInput.value = '';
+    clearError();
+    if (_resolve) { var r = _resolve; _resolve = null; r(null); }
+  }
+
+  closeBtn.addEventListener('click', close);
+  backdrop.addEventListener('click', close);
+
+  geocodeBtn.addEventListener('click', async function () {
+    if (!_cityId) return;
+    geocodeBtn.disabled = true;
+    geocodeBtn.textContent = 'Geocoding…';
+    geocodeResult.classList.add('hidden');
+    clearError();
+    try {
+      var res = await fetch('/api/admin/cities/' + _cityId + '/geocode', { method: 'POST' });
+      var data = await res.json();
+      if (data.status === 'ok') {
+        latInput.value = data.latitude;
+        lonInput.value = data.longitude;
+        geocodeResult.textContent = data.displayName || 'Found';
+        geocodeResult.classList.remove('hidden');
+      } else if (data.status === 'not_found') {
+        geocodeResult.textContent = 'Not found — enter coordinates manually.';
+        geocodeResult.classList.remove('hidden');
+      } else {
+        geocodeResult.textContent = 'Geocode error: ' + (data.reason || 'unknown');
+        geocodeResult.classList.remove('hidden');
+      }
+    } catch (e) {
+      showError('Geocode request failed.');
+    } finally {
+      geocodeBtn.disabled = false;
+      geocodeBtn.textContent = 'Run geocode';
+    }
+  });
+
+  saveBtn.addEventListener('click', async function () {
+    clearError();
+    var lat = latInput.value.trim() === '' ? null : parseFloat(latInput.value);
+    var lon = lonInput.value.trim() === '' ? null : parseFloat(lonInput.value);
+
+    if (lat !== null && (isNaN(lat) || lat < -90 || lat > 90)) {
+      showError('Latitude must be between -90 and 90.');
+      return;
+    }
+    if (lon !== null && (isNaN(lon) || lon < -180 || lon > 180)) {
+      showError('Longitude must be between -180 and 180.');
+      return;
+    }
+    if ((lat === null) !== (lon === null)) {
+      showError('Provide both latitude and longitude, or leave both empty to clear.');
+      return;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+    try {
+      var res = await fetch('/api/admin/cities/' + _cityId + '/coordinates', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ latitude: lat, longitude: lon }),
+      });
+      if (!res.ok) {
+        var err = await res.json();
+        showError(err.error || 'Save failed.');
+        return;
+      }
+      var updated = await res.json();
+      var r = _resolve; _resolve = null;
+      close();
+      if (r) r({ latitude: updated.latitude, longitude: updated.longitude });
+    } catch (e) {
+      showError('Save request failed.');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save';
+    }
+  });
+
+  clearBtn.addEventListener('click', function () {
+    latInput.value = '';
+    lonInput.value = '';
+    clearError();
+  });
+
+  window.CityCoordinateEditor = {
+    open: function (cityId, cityName, countryName, currentLat, currentLon) {
+      return new Promise(function (resolve) {
+        _cityId  = cityId;
+        _resolve = resolve;
+        titleEl.textContent = cityName + (countryName ? ' — ' + countryName : '');
+        latInput.value = currentLat != null ? currentLat : '';
+        lonInput.value = currentLon != null ? currentLon : '';
+        geocodeResult.classList.add('hidden');
+        clearError();
+        modal.classList.remove('hidden');
+        latInput.focus();
+      });
+    },
+  };
+}());
+</script>

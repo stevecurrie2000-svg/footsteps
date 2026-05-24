@@ -4,6 +4,7 @@ export const prerender = false;
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import { requireAdmin } from "../../../lib/admin-auth";
 import AdminModal from "../../../components/AdminModal.astro";
+import CityCoordinateEditor from "../../../components/CityCoordinateEditor.astro";
 
 const adminCheck = await requireAdmin(Astro.request);
 if (adminCheck instanceof Response) return adminCheck;
@@ -66,6 +67,7 @@ if (adminCheck instanceof Response) return adminCheck;
   </div>
 
   <AdminModal />
+  <CityCoordinateEditor />
 </BaseLayout>
 
 <script is:inline>
@@ -143,13 +145,23 @@ if (adminCheck instanceof Response) return adminCheck;
 
     var cities = country.cities || [];
     var cityRows = cities.map(function (city) {
+      var hasCoords = city.latitude != null && city.longitude != null;
+      var coordBadge = hasCoords ? '' : '<span class="text-orange-400 text-xs" title="No coordinates">📍</span>';
+      var coordLabel = hasCoords
+        ? city.latitude.toFixed(4) + ', ' + city.longitude.toFixed(4)
+        : 'No coords';
       return '<div class="flex flex-wrap items-center gap-3 px-6 py-3 border-b border-white/5 last:border-0"' +
         ' data-cityid="' + escHtml(String(city.id)) + '"' +
-        ' data-cityname="' + escHtml(city.name) + '">' +
+        ' data-cityname="' + escHtml(city.name) + '"' +
+        ' data-citylat="' + escHtml(city.latitude != null ? String(city.latitude) : '') + '"' +
+        ' data-citylon="' + escHtml(city.longitude != null ? String(city.longitude) : '') + '"' +
+        ' data-countryname="' + escHtml(country.name) + '">' +
         '<span class="flex-1 text-sm">' + escHtml(city.name) + '</span>' +
+        coordBadge +
         '<span class="text-foreground/40 text-xs whitespace-nowrap">' + escHtml(city.slug) + ' · ' + city.photo_count + ' ' + (city.photo_count === 1 ? 'photo' : 'photos') + '</span>' +
         '<button data-action="manage-photos" class="text-xs text-foreground/60 hover:text-foreground border border-white/10 px-2 py-1 rounded transition-colors">Manage photos</button>' +
         '<button data-action="rename-city" class="text-xs text-foreground/60 hover:text-foreground border border-white/10 px-2 py-1 rounded transition-colors">Rename</button>' +
+        '<button data-action="edit-city-coords" class="text-xs text-foreground/60 hover:text-foreground border border-white/10 px-2 py-1 rounded transition-colors" title="' + escHtml(coordLabel) + '">Coords</button>' +
         '<button data-action="delete-city" class="text-xs text-red-400 hover:text-red-300 border border-red-500/20 hover:border-red-500/40 px-2 py-1 rounded transition-colors">Delete</button>' +
         '</div>';
     }).join('');
@@ -388,6 +400,15 @@ if (adminCheck instanceof Response) return adminCheck;
         aci.value = '';
         await loadAndRender();
       } catch { alert('Failed to add city'); btn.disabled = false; }
+      return;
+    }
+
+    if (action === 'edit-city-coords') {
+      var countryName = cityRow ? cityRow.dataset.countryname : '';
+      var currentLat = cityRow && cityRow.dataset.citylat !== '' ? parseFloat(cityRow.dataset.citylat) : null;
+      var currentLon = cityRow && cityRow.dataset.citylon !== '' ? parseFloat(cityRow.dataset.citylon) : null;
+      var saved = await window.CityCoordinateEditor.open(cityId, cityName, countryName, currentLat, currentLon);
+      if (saved) await loadAndRender();
       return;
     }
 

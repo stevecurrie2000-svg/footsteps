@@ -26,6 +26,73 @@ export function slugify(name: string): string {
     .replace(/^-+|-+$/g, "");                // trim leading/trailing hyphens
 }
 
+export type ForwardGeocodeResult =
+  | { status: 'ok'; latitude: number; longitude: number; displayName: string }
+  | { status: 'not_found' }
+  | { status: 'error'; reason: 'timeout' | 'network' | 'parse' };
+
+/**
+ * Forward geocode a city name to coordinates.
+ * Uses Nominatim's structured query (NOT q=).
+ * countryName is optional context to narrow disambiguation.
+ */
+export async function forwardGeocode(
+  cityName: string,
+  countryName?: string,
+): Promise<ForwardGeocodeResult> {
+  if (!cityName || !cityName.trim()) return { status: 'not_found' };
+
+  const params = new URLSearchParams({
+    city: cityName.trim(),
+    format: 'jsonv2',
+    limit: '1',
+  });
+  if (countryName && countryName.trim()) {
+    params.set('country', countryName.trim());
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+
+  let res: Response;
+  try {
+    res = await fetch(
+      `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+      {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'footsteps.gallery (stevecurrie2000@gmail.com)' },
+      }
+    );
+    clearTimeout(timer);
+  } catch (err) {
+    clearTimeout(timer);
+    return {
+      status: 'error',
+      reason: (err as Error).name === 'AbortError' ? 'timeout' : 'network',
+    };
+  }
+
+  if (!res.ok) return { status: 'error', reason: 'network' };
+
+  let data: Array<{ lat: string; lon: string; display_name: string }>;
+  try {
+    data = await res.json() as typeof data;
+  } catch {
+    return { status: 'error', reason: 'parse' };
+  }
+
+  if (!Array.isArray(data) || data.length === 0) return { status: 'not_found' };
+
+  const lat = parseFloat(data[0].lat);
+  const lon = parseFloat(data[0].lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) ||
+      lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    return { status: 'error', reason: 'parse' };
+  }
+
+  return { status: 'ok', latitude: lat, longitude: lon, displayName: data[0].display_name ?? '' };
+}
+
 export async function reverseGeocode(lat: number, lon: number): Promise<GeocodeResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
