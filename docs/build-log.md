@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 24 May 2026, 23:55
+**Last updated**: 25 May 2026, 11:25
 
 | Item | State |
 |---|---|
@@ -33,7 +33,8 @@ boundaries.
 | Slice B.1 — Homepage + /private index polish | ✅ Done |
 | Slice C — Lightbox, accessibility, social, favicon | ✅ Done |
 | Phase 7 Slice 1 — Homepage map view | ✅ Done |
-| Next immediate task | Phase 5 real-world test with Lorraine/Mia/Alex; homepage map production verification |
+| Phase 7 Slice 2 — City coordinates + free-text creation | ✅ Done |
+| Next immediate task | Backfill city coords via new Coords editor; Phase 5 real-world test |
 
 ---
 
@@ -3202,3 +3203,92 @@ require a runtime key should either (a) refuse to build without the key set,
 or (b) use a sentinel that fails loudly at deploy time, not at first page
 load. The MapTiler key shipped to production because nothing in the build
 pipeline objected to a known-bad string.
+
+---
+
+## Phase 7 Slice 2 — City coordinates + free-text creation ✅
+
+**Completed**: 25 May 2026, 11:25
+
+**Context**: Two issues with the Phase 7 Slice 1 map:
+- Issue A — manually overriding a photo's city in `/admin/photos` leaves `photos.latitude/longitude` unchanged (still the EXIF GPS of the original location), so the map pin drifts to the wrong position.
+- Issue B — photos without EXIF GPS are excluded from the map entirely, even when they have a valid country + city assignment.
+
+**Root cause**: The Slice 1 map query used `AVG(photos.latitude)` as the city pin position. If a photo has no GPS, it contributes nothing; if a photo's city was reassigned, its GPS still comes from the original location.
+
+**Solution**: Give cities their own canonical coordinates. `photos.latitude/longitude` stays as immutable EXIF audit data. New `cities.latitude/longitude` columns store the centroid, set via Nominatim forward-geocoding when a city is created and editable via admin UI.
+
+**What was built**
+
+`migrations/0005_add_city_coordinates.sql`
+- `ALTER TABLE cities ADD COLUMN latitude REAL`
+- `ALTER TABLE cities ADD COLUMN longitude REAL`
+- Applied local (wrangler d1 --local) and remote (--command workaround, --file was blocked by Cloudflare API auth bug).
+
+`src/lib/nominatim.ts` — `forwardGeocode(cityName, countryName?)`
+- Structured Nominatim query: `?city=X&country=Y&format=jsonv2&limit=1`
+- 5s AbortController timeout; User-Agent required header.
+- Returns `{ status: 'ok', latitude, longitude, displayName }` | `{ status: 'not_found' }` | `{ status: 'error', reason }`.
+
+`src/pages/api/admin/cities.ts` (POST)
+- Forward-geocodes on city creation; stores lat/lon in INSERT.
+- 201 response now includes `geocodeStatus`.
+
+`src/pages/api/admin/cities/[id]/coordinates.ts` (PATCH)
+- Updates `cities.latitude/longitude` for a given city id.
+- Validates range: lat ∈ [-90, 90], lon ∈ [-180, 180]. Accepts `null` to clear.
+- Returns updated row.
+
+`src/pages/api/admin/cities/[id]/geocode.ts` (POST)
+- Runs `forwardGeocode` without writing; returns the result for user review.
+- Looks up city name + country name from DB by id.
+
+`src/pages/api/admin/countries/list.ts`
+- Added `ci.latitude, ci.longitude` to city SELECT and `CityRow` type.
+
+`src/pages/api/admin/upload.ts`
+- Added `country_free_text` / `city_free_text` form fields: slugified server-side and normalised into the existing `__new__:` code path.
+- `isNewCity` branch now calls `forwardGeocode`; stores lat/lon in 5-column city INSERT.
+- Country resolution now captures `resolvedCountryName` for geocoding context.
+- Response includes `cityGeocodeStatus` and `cityName`.
+
+`src/components/CityCoordinateEditor.astro`
+- Modal: `window.CityCoordinateEditor.open(cityId, cityName, countryName, currentLat, currentLon)` → Promise.
+- "Run geocode" button calls `POST /api/admin/cities/{id}/geocode`; fills inputs with result.
+- Manual lat/lon inputs with range validation.
+- "Save" calls `PATCH /api/admin/cities/{id}/coordinates`.
+- "Clear coords" empties inputs (save with nulls clears stored coords).
+
+`src/pages/admin/countries/index.astro`
+- Imported and mounted `<CityCoordinateEditor />`.
+- City rows: added `data-citylat`, `data-citylon`, `data-countryname` attributes.
+- 📍 badge (orange) on cities with `latitude == null`.
+- "Coords" button with `data-action="edit-city-coords"` → opens editor.
+- Event handler calls `window.CityCoordinateEditor.open(...)`, reloads on save.
+
+`src/pages/admin/index.astro`
+- Country select gets `+ Add new country…` sentinel option.
+- City select gets `+ Add new city…` sentinel option (added in every city load path).
+- Selecting either sentinel shows a hidden inline `<input>` (Enter to confirm).
+- On Enter: slugifies, inserts `__new__:<slug>` option, sets `state.countrySlug`/`state.geocodedCountryName` (or city equivalents), hides input.
+- Upload FormData unchanged — existing `geocoded_country`/`geocoded_city` fields carry the name; server validates slug match.
+
+`src/pages/index.astro` — map query updated:
+```sql
+SELECT cities.id AS city_id, cities.name AS city_name,
+       cities.latitude, cities.longitude,
+       countries.slug AS country_slug, countries.name AS country_name,
+       COUNT(photos.id) AS photo_count
+FROM cities
+JOIN countries ON cities.country_id = countries.id
+JOIN photos    ON photos.city_id    = cities.id
+WHERE photos.is_public = 1
+  AND cities.latitude  IS NOT NULL
+  AND cities.longitude IS NOT NULL
+GROUP BY cities.id
+HAVING photo_count > 0
+```
+
+**Carries forward**
+- Backfill lat/lon on existing cities (London/Tower Bridge, Cessnock) via the new Coords editor.
+- D1 --file import issue: Cloudflare API returns auth error 10000 on the `/import` endpoint even with a Super Administrator OAuth token. Workaround: run `--command` instead of `--file`. Report to Cloudflare if it persists.
