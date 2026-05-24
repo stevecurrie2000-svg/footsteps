@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 25 May 2026, 11:25
+**Last updated**: 26 May 2026, 17:55
 
 | Item | State |
 |---|---|
@@ -34,7 +34,8 @@ boundaries.
 | Slice C — Lightbox, accessibility, social, favicon | ✅ Done |
 | Phase 7 Slice 1 — Homepage map view | ✅ Done |
 | Phase 7 Slice 2 — City coordinates + free-text creation | ✅ Done |
-| Next immediate task | Backfill city coords via new Coords editor; Phase 5 real-world test |
+| Phase 7 Slice 3 — World-view cluster map + attribution fix | ✅ Done |
+| Next immediate task | Verify cluster map in production; Phase 5 real-world test |
 
 ---
 
@@ -3292,3 +3293,49 @@ HAVING photo_count > 0
 **Carries forward**
 - Backfill lat/lon on existing cities (London/Tower Bridge, Cessnock) via the new Coords editor.
 - D1 --file import issue: Cloudflare API returns auth error 10000 on the `/import` endpoint even with a Super Administrator OAuth token. Workaround: run `--command` instead of `--file`. Report to Cloudflare if it persists.
+
+---
+
+## Phase 7 Slice 3 — World-view cluster map + attribution fix ✅
+
+**Completed**: 26 May 2026, 17:55
+
+**Context**: Two visual defects in the Slice 1 map:
+- Defect 1: bounding-box framing pinched between London and Panglao, leaving ~80° of empty Eurasia. Worsens as more regions are added.
+- Defect 2: MapTiler attribution pill at bottom-right occluded the Panglao pin.
+
+**What was built**
+
+`src/pages/index.astro` — script block fully replaced:
+
+1. **GeoJSON FeatureCollection** built from the `pins` array (note: GeoJSON coordinate order is `[longitude, latitude]`, not lat/lon).
+
+2. **Clustered GeoJSON source** (`cluster: true`, `clusterMaxZoom: 6`, `clusterRadius: 40`).
+
+3. **Three layers**:
+   - `clusters` (circle): dark fill `#1a1a1a`, white stroke 0.6 opacity. Three size bands by `point_count`: <5 → 16px, ≥5 → 22px, ≥15 → 28px. Stroke width 1.5/2/2.5px.
+   - `cluster-count` (symbol): `point_count_abbreviated`, `Noto Sans Bold` 12px, `#fafafa`. Font name verified against `basic-v2-dark` style network logs from Slice 1.
+   - `unclustered-point` (circle): 10px white dot, 4px translucent stroke ring (matches old DOM-marker shadow).
+
+4. **Click handlers**: cluster click → `getClusterExpansionZoom` + `easeTo`; pin click → `window.location.href` to country page.
+
+5. **Hover popup** on `unclustered-point`: `maplibregl.Popup` with `className: 'footsteps-pin-popup'`, `setText` (not setHTML, avoids XSS from city names). Styled via `global.css`.
+
+6. **Initial view**: `fitBounds([[-170, -55], [180, 75]], { padding: { bottom: 50, ... } })` — world view, bottom padding as attribution-occlusion defence.
+
+7. **Attribution** moved to bottom-left, `compact: true` (collapses to (i) icon).
+
+8. **NavigationControl**: zoom +/- only (`showCompass: false`), top-right.
+
+9. **ResetViewControl**: custom MapLibre control class, 🌍 button, `easeTo({ center: [20, 30], zoom: 1, duration: 600 })`.
+
+`src/styles/global.css` — added:
+- `.footsteps-pin-popup` styles (dark bg, white text, thin border, uppercase small text). Popup CSS must be global (MapLibre injects popup outside Astro component scope — scoped styles don't reach it).
+- `.footsteps-reset-btn` style (18px font, 29px line-height to match MapLibre 29×29px ctrl button).
+
+Removed: bounding box frontmatter computation, `data-sw-lon/lat/ne-lon/lat` attributes.
+
+**Tunable constants** (recorded for future adjustment):
+- `clusterMaxZoom: 6` — clustering stops at country-detail zoom level
+- `clusterRadius: 40` — ~40px triggers merge
+- `[[-170, -55], [180, 75]]` — world bounds (crops Antarctica, keeps Pacific)
