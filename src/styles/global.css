@@ -17,3 +17,26 @@ body {
   color: #fafafa;
   font-family: "Inter", system-ui, sans-serif;
 }
+
+/* MapLibre pin tooltip */
+.footsteps-pin-popup .maplibregl-popup-content {
+  background: #0a0a0a;
+  color: #fafafa;
+  border: 1px solid rgba(250, 250, 250, 0.15);
+  border-radius: 2px;
+  padding: 4px 8px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  box-shadow: none;
+}
+.footsteps-pin-popup .maplibregl-popup-tip {
+  border-top-color: #0a0a0a;
+}
+
+/* MapLibre reset-to-world button */
+.footsteps-reset-btn {
+  font-size: 18px;
+  line-height: 29px;
+  text-align: center;
+}

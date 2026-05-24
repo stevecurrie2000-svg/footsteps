@@ -58,15 +58,6 @@ const { results: pinRows } = await env.DB.prepare(`
 
 const pins = pinRows ?? [];
 
-// Bounding box: start from Europe-tight, expand to include any pin outside
-let swLon = -10, swLat = 35, neLon = 30, neLat = 60;
-for (const pin of pins) {
-  if (pin.longitude < swLon) swLon = pin.longitude;
-  if (pin.latitude  < swLat) swLat = pin.latitude;
-  if (pin.longitude > neLon) neLon = pin.longitude;
-  if (pin.latitude  > neLat) neLat = pin.latitude;
-}
-
 const mapLabel = pins.length === 0
   ? 'Map of Europe showing photograph locations (none yet)'
   : `Map showing photograph locations in ${pins.map(p => p.city_name).join(', ')}`;
@@ -103,10 +94,6 @@ const pinsJson = JSON.stringify(pins.map(p => ({
         aria-label={mapLabel}
         class="relative mx-auto max-w-7xl overflow-hidden rounded-sm bg-zinc-900"
         style="aspect-ratio: 1200 / 480;"
-        data-sw-lon={swLon}
-        data-sw-lat={swLat}
-        data-ne-lon={neLon}
-        data-ne-lat={neLat}
         data-pins={pinsJson}
       >
         <div id="maplibre-mount" class="absolute inset-0 h-full w-full"></div>
@@ -163,17 +150,20 @@ const pinsJson = JSON.stringify(pins.map(p => ({
   const MAP_STYLE_ID = 'basic-v2-dark';
 
   const container = document.getElementById('map-container') as HTMLElement | null;
-  const mount = document.getElementById('maplibre-mount') as HTMLElement | null;
 
-  if (container && mount) {
-    const bounds: [[number, number], [number, number]] = [
-      [parseFloat(container.dataset.swLon ?? '-10'), parseFloat(container.dataset.swLat ?? '35')],
-      [parseFloat(container.dataset.neLon ?? '30'),  parseFloat(container.dataset.neLat ?? '60')],
-    ];
-
+  if (container) {
     const pins = JSON.parse(container.dataset.pins ?? '[]') as {
       lat: number; lon: number; cityName: string; countrySlug: string; count: number;
     }[];
+
+    const geojson = {
+      type: 'FeatureCollection' as const,
+      features: pins.map(p => ({
+        type: 'Feature' as const,
+        geometry: { type: 'Point' as const, coordinates: [p.lon, p.lat] as [number, number] },
+        properties: { cityName: p.cityName, countrySlug: p.countrySlug, photoCount: p.count },
+      })),
+    };
 
     (async () => {
       const maplibregl = (await import('maplibre-gl')).default;
@@ -188,32 +178,137 @@ const pinsJson = JSON.stringify(pins.map(p => ({
       const map = new maplibregl.Map({
         container: 'maplibre-mount',
         style: `https://api.maptiler.com/maps/${MAP_STYLE_ID}/style.json?key=${MAPTILER_KEY}`,
-        bounds,
-        fitBoundsOptions: { padding: 40 },
+        attributionControl: false,
         interactive: true,
-        attributionControl: true,
       });
 
-      map.on('load', () => {
-        for (const pin of pins) {
-          const el = document.createElement('a');
-          el.href = `/countries/${pin.countrySlug}`;
-          el.setAttribute('aria-label', `View photographs from ${pin.cityName}`);
-          el.style.cssText =
-            'display:block;width:10px;height:10px;border-radius:50%;' +
-            'background:#fafafa;box-shadow:0 0 0 4px rgba(250,250,250,0.15);cursor:pointer;';
+      map.fitBounds([[-170, -55], [180, 75]], {
+        padding: { bottom: 50, top: 30, left: 30, right: 30 },
+        duration: 0,
+      });
 
-          new maplibregl.Marker({ element: el })
-            .setLngLat([pin.lon, pin.lat])
-            .setPopup(
-              new maplibregl.Popup({ offset: 12, closeButton: false })
-                .setHTML(
-                  `<span style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em">` +
-                  `${pin.cityName}${pin.count > 1 ? ` · ${pin.count}` : ''}</span>`
-                )
-            )
-            .addTo(map);
+      map.addControl(
+        new maplibregl.AttributionControl({ compact: true }),
+        'bottom-left',
+      );
+
+      map.addControl(
+        new maplibregl.NavigationControl({ showCompass: false, showZoom: true, visualizePitch: false }),
+        'top-right',
+      );
+
+      class ResetViewControl {
+        private _map: any;
+        private _container!: HTMLDivElement;
+
+        onAdd(m: any) {
+          this._map = m;
+          const btn = document.createElement('button');
+          btn.className = 'maplibregl-ctrl-icon footsteps-reset-btn';
+          btn.type = 'button';
+          btn.setAttribute('aria-label', 'Reset to world view');
+          btn.title = 'Reset to world view';
+          btn.innerHTML = '🌍';
+          btn.addEventListener('click', () => m.easeTo({ center: [20, 30], zoom: 1, duration: 600 }));
+          this._container = document.createElement('div');
+          this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+          this._container.appendChild(btn);
+          return this._container;
         }
+        onRemove() {
+          this._container?.parentNode?.removeChild(this._container);
+          this._map = undefined;
+        }
+      }
+
+      map.addControl(new ResetViewControl(), 'top-right');
+
+      map.on('load', () => {
+        map.addSource('photos', {
+          type: 'geojson',
+          data: geojson,
+          cluster: true,
+          clusterMaxZoom: 6,
+          clusterRadius: 40,
+        });
+
+        map.addLayer({
+          id: 'clusters',
+          type: 'circle',
+          source: 'photos',
+          filter: ['has', 'point_count'],
+          paint: {
+            'circle-color': '#1a1a1a',
+            'circle-stroke-color': '#fafafa',
+            'circle-stroke-opacity': 0.6,
+            'circle-radius': ['step', ['get', 'point_count'], 16, 5, 22, 15, 28],
+            'circle-stroke-width': ['step', ['get', 'point_count'], 1.5, 5, 2, 15, 2.5],
+          },
+        });
+
+        map.addLayer({
+          id: 'cluster-count',
+          type: 'symbol',
+          source: 'photos',
+          filter: ['has', 'point_count'],
+          layout: {
+            'text-field': ['get', 'point_count_abbreviated'],
+            'text-font': ['Noto Sans Bold'],
+            'text-size': 12,
+            'text-allow-overlap': true,
+          },
+          paint: { 'text-color': '#fafafa' },
+        });
+
+        map.addLayer({
+          id: 'unclustered-point',
+          type: 'circle',
+          source: 'photos',
+          filter: ['!', ['has', 'point_count']],
+          paint: {
+            'circle-color': '#fafafa',
+            'circle-radius': 5,
+            'circle-stroke-color': 'rgba(250, 250, 250, 0.2)',
+            'circle-stroke-width': 4,
+          },
+        });
+
+        const popup = new maplibregl.Popup({
+          closeButton: false,
+          closeOnClick: false,
+          offset: 10,
+          className: 'footsteps-pin-popup',
+        });
+
+        map.on('click', 'clusters', async (e: any) => {
+          const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
+          if (!features.length) return;
+          const clusterId = features[0].properties.cluster_id;
+          const zoom = await (map.getSource('photos') as any).getClusterExpansionZoom(clusterId);
+          map.easeTo({ center: (features[0].geometry as any).coordinates, zoom, duration: 600 });
+        });
+
+        map.on('click', 'unclustered-point', (e: any) => {
+          const props = e.features?.[0]?.properties;
+          if (props?.countrySlug) window.location.href = `/countries/${props.countrySlug}`;
+        });
+
+        map.on('mouseenter', 'unclustered-point', (e: any) => {
+          map.getCanvas().style.cursor = 'pointer';
+          const f = e.features?.[0];
+          if (!f) return;
+          const { cityName, photoCount } = f.properties;
+          const label = `${cityName} — ${photoCount} photo${photoCount === 1 ? '' : 's'}`;
+          popup.setLngLat(f.geometry.coordinates).setText(label).addTo(map);
+        });
+
+        map.on('mouseleave', 'unclustered-point', () => {
+          map.getCanvas().style.cursor = '';
+          popup.remove();
+        });
+
+        map.on('mouseenter', 'clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'clusters', () => { map.getCanvas().style.cursor = ''; });
       });
     })();
   }
