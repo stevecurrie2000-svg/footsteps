@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 26 May 2026, 23:30
+**Last updated**: 27 May 2026, 00:15
 
 | Item | State |
 |---|---|
@@ -36,6 +36,7 @@ boundaries.
 | Phase 7 Slice 2 — City coordinates + free-text creation | ✅ Done |
 | Phase 7 Slice 3 — World-view cluster map + attribution fix | ✅ Done |
 | Fix: renderWorldCopies + CI placeholder guard | ✅ Done |
+| Thumbnail reconciliation on photo PATCH/DELETE | ✅ Done |
 | Next immediate task | Backlog cleanup sequencing (carries close-out) |
 
 ---
@@ -2495,6 +2496,63 @@ browser, so the beacon JSON parses correctly.
 - ✅ GitHub Actions deploy green
 - ✅ (pending) beacon.min.js loads on public pages, absent on admin/private
 - ✅ (pending) Cloudflare Web Analytics dashboard receiving pageviews
+
+---
+
+### Slice: Thumbnail reconciliation on photo PATCH/DELETE (27 May 2026, 00:15)
+
+**Context**: The PATCH and DELETE handlers in
+`src/pages/api/admin/photos/[id].ts` previously left country thumbnails
+stranded on NULL when a photo was reassigned or deleted. No replacement
+was picked — the homepage country tile would go blank until manually
+re-set via `/admin/countries`. The invariant we want: a country has a
+populated thumbnail (per audience) iff it has at least one photo of
+that audience. NULL only when there are no qualifying photos.
+
+**What was built**
+
+- **`src/lib/thumbnails.ts`** (new) — `reconcileCountryThumbnailStatements(db, countryId)`.
+  Returns two D1 prepared statements: one for the public slot, one for
+  private. Each uses a SELECT subquery inside the UPDATE to pick the most
+  recent qualifying photo (`ORDER BY uploaded_at DESC, id DESC LIMIT 1`),
+  or NULL if none exists. Designed to be spread into the caller's D1 batch
+  after the triggering write, so the subquery reads post-write state.
+  Uses `?1` for the `country_id` bind — one bound value, two references
+  in the SQL (`WHERE country_id = ?1` and `WHERE id = ?1`).
+
+- **`src/pages/api/admin/photos/[id].ts`** (edit) — PATCH and DELETE
+  batches replaced:
+
+  *PATCH*: Old batch was a 3-statement conditional (update photo, clear old
+  thumbnail if this was it, set new thumbnail if NULL). New batch: update
+  photo first, then reconcile old country (both audience slots), then
+  reconcile new country if country changed. Handles all cases the old
+  code missed (e.g. audience flip with an existing public thumbnail in the
+  same country needing replacement picked, or new country having an
+  existing thumbnail that shouldn't be displaced).
+
+  *DELETE*: Old batch cleared both thumbnail slots globally (blanket WHERE
+  col = photoId across all countries) then deleted. New batch: delete
+  first, then reconcile just the deleted photo's country. Blanket clear no
+  longer needed — the subquery naturally returns NULL or a replacement when
+  the photo is gone. `country_id` added to the SELECT and `PhotoRow` type
+  to support this.
+
+**Decisions**
+
+- Reconcile runs in the same D1 batch as the write — no window where the
+  homepage points at a gone photo.
+- Reconcile old country always (PATCH): doesn't matter which audience the
+  photo was/is — both slots are reconciled from current truth.
+- Reconcile new country only if different from old (PATCH): no-op to
+  reconcile same country twice (idempotent), but skipping is cleaner.
+- The blanket "clear all countries that reference this photo ID" approach
+  in DELETE was defensive but masking a 1:1 relationship that the schema
+  enforces. Narrowing to `photo.country_id` is correct and intentional.
+
+**Build**: `npm run build` clean. Post-write grep audit: zero matches for
+`public_thumbnail_photo_id = NULL` in the handler — old inline clear
+logic fully replaced.
 
 **Lessons learned this session**
 

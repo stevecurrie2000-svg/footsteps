@@ -3,9 +3,11 @@ export const prerender = false;
 import type { APIRoute } from "astro";
 import { env } from "cloudflare:workers";
 import { requireAdmin } from "../../../../lib/admin-auth";
+import { reconcileCountryThumbnailStatements } from "../../../../lib/thumbnails";
 
 type PhotoRow = {
   id: string;
+  country_id: number;
   r2_key_thumb: string;
   r2_key_medium: string;
   r2_key_full: string;
@@ -89,30 +91,16 @@ export const PATCH: APIRoute = async ({ request, params }) => {
   }
 
   try {
-    await env.DB.batch([
-      // Update the photo row.
+    const statements = [
       env.DB.prepare(
         `UPDATE photos SET country_id = ?1, city_id = ?2, is_public = ?3, caption = ?4 WHERE id = ?5`
       ).bind(newCountryId, newCityId, newIsPublic, newCaption, id),
-
-      // Clear old audience thumbnail on old country (no-op if this photo wasn't the thumbnail).
-      photo.is_public === 1
-        ? env.DB.prepare(
-            `UPDATE countries SET public_thumbnail_photo_id = NULL WHERE id = ?1 AND public_thumbnail_photo_id = ?2`
-          ).bind(photo.country_id, id)
-        : env.DB.prepare(
-            `UPDATE countries SET private_thumbnail_photo_id = NULL WHERE id = ?1 AND private_thumbnail_photo_id = ?2`
-          ).bind(photo.country_id, id),
-
-      // Auto-set thumbnail on new country for new audience (IS NULL guard).
-      newIsPublic === 1
-        ? env.DB.prepare(
-            `UPDATE countries SET public_thumbnail_photo_id = ?1 WHERE id = ?2 AND public_thumbnail_photo_id IS NULL`
-          ).bind(id, newCountryId)
-        : env.DB.prepare(
-            `UPDATE countries SET private_thumbnail_photo_id = ?1 WHERE id = ?2 AND private_thumbnail_photo_id IS NULL`
-          ).bind(id, newCountryId),
-    ]);
+      ...reconcileCountryThumbnailStatements(env.DB, photo.country_id),
+    ];
+    if (newCountryId !== photo.country_id) {
+      statements.push(...reconcileCountryThumbnailStatements(env.DB, newCountryId));
+    }
+    await env.DB.batch(statements);
   } catch (err) {
     console.error("Photo PATCH D1 error:", err);
     return new Response(JSON.stringify({ error: "Failed to update photo" }), {
@@ -140,7 +128,7 @@ export const DELETE: APIRoute = async ({ request, params }) => {
   }
 
   const photo = await env.DB.prepare(
-    `SELECT id, r2_key_thumb, r2_key_medium, r2_key_full, r2_key_original
+    `SELECT id, country_id, r2_key_thumb, r2_key_medium, r2_key_full, r2_key_original
      FROM photos WHERE id = ?`
   ).bind(id).first<PhotoRow>();
 
@@ -151,16 +139,11 @@ export const DELETE: APIRoute = async ({ request, params }) => {
     });
   }
 
-  // Clear thumbnail references and delete the photo row atomically.
+  // Delete the photo row and reconcile the country's thumbnails atomically.
   try {
     await env.DB.batch([
-      env.DB.prepare(
-        `UPDATE countries SET public_thumbnail_photo_id = NULL WHERE public_thumbnail_photo_id = ?`
-      ).bind(id),
-      env.DB.prepare(
-        `UPDATE countries SET private_thumbnail_photo_id = NULL WHERE private_thumbnail_photo_id = ?`
-      ).bind(id),
       env.DB.prepare(`DELETE FROM photos WHERE id = ?`).bind(id),
+      ...reconcileCountryThumbnailStatements(env.DB, photo.country_id),
     ]);
   } catch (err) {
     console.error("Photo D1 delete error:", err);
