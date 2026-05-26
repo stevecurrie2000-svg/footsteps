@@ -1,0 +1,403 @@
+---
+export const prerender = false;
+
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { requireAdmin } from "../../lib/admin-auth";
+
+const auth = await requireAdmin(Astro.request);
+if (auth instanceof Response) return auth;
+---
+
+<BaseLayout title="Access — Footsteps Admin" isAdmin={true}>
+  <div class="mx-auto max-w-4xl px-6 py-10">
+
+    <!-- Add user form -->
+    <section class="mb-10">
+      <h2 class="mb-4 text-sm font-medium uppercase tracking-widest text-foreground/60">Add user</h2>
+      <div class="flex flex-col gap-3 sm:flex-row">
+        <input
+          id="add-email"
+          type="email"
+          placeholder="email@gmail.com"
+          maxlength="254"
+          class="flex-1 rounded bg-white/5 border border-white/10 px-3 py-2 text-sm text-foreground placeholder:text-foreground/30 focus:outline-none focus:ring-1 focus:ring-white/20"
+        />
+        <input
+          id="add-note"
+          type="text"
+          placeholder="Note (optional)"
+          maxlength="100"
+          class="sm:w-48 rounded bg-white/5 border border-white/10 px-3 py-2 text-sm text-foreground placeholder:text-foreground/30 focus:outline-none focus:ring-1 focus:ring-white/20"
+        />
+        <button
+          id="add-btn"
+          class="rounded bg-white text-background px-4 py-2 text-sm font-medium hover:bg-white/90 transition-colors disabled:opacity-40"
+        >Add</button>
+      </div>
+      <p id="add-error" class="mt-2 hidden text-sm text-red-400"></p>
+    </section>
+
+    <!-- User list -->
+    <section>
+      <h2 class="mb-4 text-sm font-medium uppercase tracking-widest text-foreground/60">
+        Users <span id="user-count" class="normal-case"></span>
+      </h2>
+
+      <!-- Loading skeleton -->
+      <div id="loading-skeleton" class="space-y-2">
+        {[1,2,3].map(() => (
+          <div class="h-12 rounded bg-white/5 animate-pulse" />
+        ))}
+      </div>
+
+      <!-- Error state -->
+      <p id="load-error" class="hidden text-sm text-red-400"></p>
+
+      <!-- Desktop table -->
+      <table id="users-table" class="hidden w-full text-sm">
+        <thead>
+          <tr class="border-b border-white/10 text-left text-xs uppercase tracking-widest text-foreground/40">
+            <th class="pb-2 pr-6 font-medium">Email</th>
+            <th class="pb-2 pr-6 font-medium">Note</th>
+            <th class="pb-2 pr-6 font-medium">Last sign-in</th>
+            <th class="pb-2 font-medium"></th>
+          </tr>
+        </thead>
+        <tbody id="users-tbody"></tbody>
+      </table>
+
+      <!-- Mobile card stack -->
+      <div id="users-cards" class="hidden space-y-3 md:hidden"></div>
+    </section>
+
+  </div>
+
+  <!-- Confirm modal -->
+  <div id="confirm-modal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true">
+    <div id="confirm-backdrop" class="absolute inset-0 bg-black/80"></div>
+    <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-sm bg-background border border-white/20 rounded p-6">
+      <p id="confirm-message" class="mb-6 text-sm text-foreground/80"></p>
+      <div class="flex justify-end gap-3">
+        <button id="confirm-cancel" class="px-4 py-2 text-sm text-foreground/60 hover:text-foreground transition-colors">Cancel</button>
+        <button id="confirm-ok" class="px-4 py-2 text-sm font-medium bg-red-600 hover:bg-red-500 rounded transition-colors">Remove</button>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  type User = {
+    email: string;
+    note: string;
+    last_sign_in: string | null;
+    is_self: boolean;
+  };
+
+  let users: User[] = [];
+
+  // ── Utilities ────────────────────────────────────────────────
+
+  function showToast(message: string) {
+    const toast = document.createElement("div");
+    toast.className =
+      "fixed bottom-4 right-4 z-50 max-w-xs px-4 py-3 rounded shadow-lg " +
+      "bg-zinc-800 border border-white/10 text-sm text-foreground " +
+      "transition-opacity duration-300";
+    toast.style.opacity = "0";
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => { toast.style.opacity = "1"; });
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+    }, 4000);
+  }
+
+  function formatSignIn(iso: string | null): { text: string; muted: boolean } {
+    if (!iso) return { text: "Never", muted: true };
+    const d = new Date(iso);
+    const now = new Date();
+    const day = d.getDate();
+    const month = d.toLocaleString("en-AU", { month: "short" });
+    if (d.getFullYear() === now.getFullYear()) {
+      const h = String(d.getHours()).padStart(2, "0");
+      const m = String(d.getMinutes()).padStart(2, "0");
+      return { text: `${day} ${month}, ${h}:${m}`, muted: false };
+    }
+    return { text: `${day} ${month} ${d.getFullYear()}`, muted: false };
+  }
+
+  function escapeHtml(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  // ── Confirm modal ─────────────────────────────────────────────
+
+  function showConfirm(message: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const modal = document.getElementById("confirm-modal")!;
+      const msg = document.getElementById("confirm-message")!;
+      const ok = document.getElementById("confirm-ok")!;
+      const cancel = document.getElementById("confirm-cancel")!;
+      const backdrop = document.getElementById("confirm-backdrop")!;
+
+      msg.textContent = message;
+      modal.classList.remove("hidden");
+
+      function close(result: boolean) {
+        modal.classList.add("hidden");
+        ok.replaceWith(ok.cloneNode(true));
+        cancel.replaceWith(cancel.cloneNode(true));
+        backdrop.replaceWith(backdrop.cloneNode(true));
+        resolve(result);
+      }
+
+      document.getElementById("confirm-ok")!.addEventListener("click", () => close(true), { once: true });
+      document.getElementById("confirm-cancel")!.addEventListener("click", () => close(false), { once: true });
+      document.getElementById("confirm-backdrop")!.addEventListener("click", () => close(false), { once: true });
+    });
+  }
+
+  // ── Render ────────────────────────────────────────────────────
+
+  function renderTable(userList: User[]) {
+    const tbody = document.getElementById("users-tbody")!;
+    tbody.innerHTML = "";
+
+    for (const user of userList) {
+      const { text: signInText, muted } = formatSignIn(user.last_sign_in);
+      const label = escapeHtml(user.email) + (user.is_self ? ' <span class="text-foreground/40">(you)</span>' : "");
+      const noteHtml = `<span class="note-display cursor-text text-foreground/60 hover:text-foreground/80 transition-colors" data-email="${escapeHtml(user.email)}">${escapeHtml(user.note) || '<span class="text-foreground/20 italic">add note</span>'}</span>`;
+      const signInHtml = muted
+        ? `<span class="text-foreground/30">${signInText}</span>`
+        : signInText;
+      const removeHtml = user.is_self
+        ? ""
+        : `<button class="remove-btn text-foreground/30 hover:text-red-400 transition-colors text-xs uppercase tracking-widest" data-email="${escapeHtml(user.email)}">Remove</button>`;
+
+      const tr = document.createElement("tr");
+      tr.className = "border-b border-white/5";
+      tr.innerHTML = `
+        <td class="py-3 pr-6 font-mono text-xs">${label}</td>
+        <td class="py-3 pr-6">${noteHtml}</td>
+        <td class="py-3 pr-6 text-xs">${signInHtml}</td>
+        <td class="py-3 text-right">${removeHtml}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function renderCards(userList: User[]) {
+    const cards = document.getElementById("users-cards")!;
+    cards.innerHTML = "";
+
+    for (const user of userList) {
+      const { text: signInText, muted } = formatSignIn(user.last_sign_in);
+      const signInHtml = muted
+        ? `<span class="text-foreground/30">${signInText}</span>`
+        : signInText;
+      const removeHtml = user.is_self
+        ? ""
+        : `<button class="remove-btn mt-3 text-xs uppercase tracking-widest text-foreground/30 hover:text-red-400 transition-colors" data-email="${escapeHtml(user.email)}">Remove</button>`;
+
+      const card = document.createElement("div");
+      card.className = "rounded border border-white/10 bg-white/3 px-4 py-3";
+      card.innerHTML = `
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <p class="font-mono text-xs truncate">${escapeHtml(user.email)}${user.is_self ? ' <span class="text-foreground/40">(you)</span>' : ""}</p>
+            <p class="mt-1 text-xs text-foreground/60">Last sign-in: ${signInHtml}</p>
+            <p class="mt-1 text-xs">
+              <span class="note-display cursor-text text-foreground/60" data-email="${escapeHtml(user.email)}">${escapeHtml(user.note) || '<span class="text-foreground/20 italic">add note</span>'}</span>
+            </p>
+          </div>
+        </div>
+        ${removeHtml}
+      `;
+      cards.appendChild(card);
+    }
+  }
+
+  function render(userList: User[]) {
+    const count = document.getElementById("user-count")!;
+    count.textContent = `(${userList.length})`;
+
+    const isDesktop = window.innerWidth >= 768;
+
+    const table = document.getElementById("users-table")!;
+    const cardsEl = document.getElementById("users-cards")!;
+
+    if (isDesktop) {
+      renderTable(userList);
+      table.classList.remove("hidden");
+      cardsEl.classList.add("hidden");
+    } else {
+      renderCards(userList);
+      cardsEl.classList.remove("hidden");
+      table.classList.add("hidden");
+    }
+  }
+
+  // ── Load data ─────────────────────────────────────────────────
+
+  async function loadAndRender() {
+    try {
+      const res = await fetch("/api/admin/access/users");
+      if (!res.ok) throw new Error((await res.json() as any).error ?? `HTTP ${res.status}`);
+      const data = await res.json() as { users: User[] };
+
+      // Sort: last_sign_in DESC (nulls last), then email alpha
+      users = data.users.sort((a, b) => {
+        if (a.last_sign_in && b.last_sign_in) return b.last_sign_in.localeCompare(a.last_sign_in);
+        if (a.last_sign_in) return -1;
+        if (b.last_sign_in) return 1;
+        return a.email.localeCompare(b.email);
+      });
+
+      document.getElementById("loading-skeleton")!.classList.add("hidden");
+      render(users);
+    } catch (err: any) {
+      document.getElementById("loading-skeleton")!.classList.add("hidden");
+      const errEl = document.getElementById("load-error")!;
+      errEl.textContent = err.message;
+      errEl.classList.remove("hidden");
+    }
+  }
+
+  // ── Inline note editing (event delegation) ───────────────────
+
+  function attachNoteEditing(container: Element) {
+    container.addEventListener("click", (e) => {
+      const display = (e.target as Element).closest(".note-display") as HTMLElement | null;
+      if (!display) return;
+
+      const email = display.dataset.email!;
+      const currentNote = users.find((u) => u.email === email)?.note ?? "";
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = currentNote;
+      input.maxLength = 100;
+      input.className =
+        "w-full rounded bg-white/10 border border-white/20 px-2 py-0.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-white/20";
+
+      display.replaceWith(input);
+      input.focus();
+      input.select();
+
+      async function saveNote() {
+        const newNote = input.value.trim();
+        if (newNote === currentNote) {
+          await loadAndRender();
+          return;
+        }
+        try {
+          const res = await fetch(`/api/admin/access/users/${encodeURIComponent(email)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ note: newNote }),
+          });
+          if (!res.ok) throw new Error((await res.json() as any).error ?? "Failed");
+          showToast("Note saved.");
+        } catch (err: any) {
+          showToast(`Error: ${err.message}`);
+        }
+        await loadAndRender();
+      }
+
+      input.addEventListener("blur", saveNote, { once: true });
+      input.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") { input.blur(); }
+        if (ev.key === "Escape") { input.value = currentNote; input.blur(); }
+      });
+    });
+  }
+
+  // ── Remove (event delegation) ─────────────────────────────────
+
+  async function handleRemove(email: string) {
+    const confirmed = await showConfirm(
+      `Remove ${email}? They'll lose access immediately and you'll need to re-invite them. Their note will also be deleted.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/admin/access/users/${encodeURIComponent(email)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error((await res.json() as any).error ?? "Failed");
+      showToast(`${email} removed.`);
+      await loadAndRender();
+    } catch (err: any) {
+      showToast(`Error: ${err.message}`);
+    }
+  }
+
+  document.addEventListener("click", (e) => {
+    const btn = (e.target as Element).closest(".remove-btn") as HTMLElement | null;
+    if (!btn) return;
+    handleRemove(btn.dataset.email!);
+  });
+
+  // ── Add form ──────────────────────────────────────────────────
+
+  const addBtn = document.getElementById("add-btn") as HTMLButtonElement;
+  const addEmail = document.getElementById("add-email") as HTMLInputElement;
+  const addNote = document.getElementById("add-note") as HTMLInputElement;
+  const addError = document.getElementById("add-error")!;
+
+  addEmail.addEventListener("blur", () => {
+    addEmail.value = addEmail.value.trim().toLowerCase();
+  });
+
+  addBtn.addEventListener("click", async () => {
+    addError.classList.add("hidden");
+    const email = addEmail.value.trim().toLowerCase();
+    const note = addNote.value.trim();
+
+    addBtn.disabled = true;
+    try {
+      const res = await fetch("/api/admin/access/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, note }),
+      });
+      const data = await res.json() as any;
+      if (!res.ok) {
+        addError.textContent = data.error ?? "Failed to add user.";
+        addError.classList.remove("hidden");
+        return;
+      }
+      addEmail.value = "";
+      addNote.value = "";
+      showToast(`${email} added.`);
+      await loadAndRender();
+    } catch (err: any) {
+      addError.textContent = err.message;
+      addError.classList.remove("hidden");
+    } finally {
+      addBtn.disabled = false;
+    }
+  });
+
+  addEmail.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") addBtn.click();
+  });
+
+  // ── Note editing on both table and cards containers ───────────
+
+  attachNoteEditing(document.getElementById("users-tbody")!);
+  attachNoteEditing(document.getElementById("users-cards")!);
+
+  // ── Re-render on resize (table ↔ card) ────────────────────────
+
+  let resizeTimer: ReturnType<typeof setTimeout>;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (users.length) render(users); }, 150);
+  });
+
+  // ── Init ──────────────────────────────────────────────────────
+
+  loadAndRender();
+</script>
