@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 27 May 2026, 00:15
+**Last updated**: 27 May 2026, 02:00
 
 | Item | State |
 |---|---|
@@ -37,7 +37,8 @@ boundaries.
 | Phase 7 Slice 3 — World-view cluster map + attribution fix | ✅ Done |
 | Fix: renderWorldCopies + CI placeholder guard | ✅ Done |
 | Thumbnail reconciliation on photo PATCH/DELETE | ✅ Done |
-| Next immediate task | Backlog cleanup sequencing (carries close-out) |
+| Workstream 3 — pre-share housekeeping (Stage 1 items 1+2) | ✅ Done |
+| Next immediate task | Stage 1 Item 3 (Tower Bridge capture_date), then Stage 3 token revocation, Stage 4 docs |
 
 ---
 
@@ -3553,3 +3554,158 @@ Backlog cleanup sequencing (the deferred Workstream 3 from this
 handoff). The intent is to close out the open carries in the right
 order and reach a properly-finished state to share with family and
 friends. No new slices planned.
+
+---
+
+### Session: Workstream 3 — pre-share housekeeping + thumbnail reconciliation slice (26 May 2026, evening)
+
+**Goal**: Work the deferred Workstream 3 carry list to make the site
+shareable with Lorraine, Mia, Alex and others. Stages 1 (test-data
+audit), 2 (real-world auth test kickoff), 3 (token revocation), 4
+(docs), 5 (build log + retro) planned. Mid-session, an unplanned
+slice (thumbnail reconciliation) was scoped, designed, built, and
+verified — pushed everything else.
+
+**Closed this session**
+
+- **Stage 1 Item 1 — Philippines test-data audit**. Pre-existing
+  state: 7 Philippines photos (2 public, 5 private), one image
+  duplicated across the audience boundary (same visual, two D1 rows,
+  two R2 keyspaces — pattern matches the Cessnock duplicate, not a
+  schema violation). Action: deleted the public copy of the duplicate
+  in `/admin/photos`, then re-tagged the remaining public photo to
+  private. End state: 6 Philippines photos, all private, zero public
+  footprint. Verification confirmed homepage cluster map no longer
+  shows Panglao pin.
+
+- **Stage 1 Item 2 — Cessnock dedupe**. Closed implicitly via Test B
+  of the thumbnail reconciliation slice (see below).
+
+- **Thumbnail reconciliation slice (unplanned, c993221 + follow-up
+  fix)**. New helper `src/lib/thumbnails.ts` introducing
+  `reconcileCountryThumbnailStatements(db, countryId)` —
+  SELECT-inside-UPDATE for atomic batch inclusion, picks most recent
+  qualifying photo per audience slot or NULL if none. PATCH and
+  DELETE handlers in `src/pages/api/admin/photos/[id].ts` refactored
+  to call the helper instead of the previous "clear-and-set-if-NULL"
+  conditional batch. Invariant now holds across all audience flips,
+  deletes, and cross-country moves: a country has a populated
+  thumbnail (per audience) iff at least one qualifying photo exists.
+
+  Initial deploy (c993221) had a column-name defect — helper
+  referenced `photos.uploaded_at` (a non-existent column); actual
+  column is `created_at`. Caused 500 on every PATCH that triggered
+  reconciliation. Fixed in a follow-up commit. Production
+  verification matrix passed end-to-end:
+  - Test A (audience flip with reconcile, both directions): pass
+  - Test B (delete the current thumbnail): pass — closed Cessnock
+    Item 2 in the process
+  - Test C (cross-country move, two-country reconcile): pass —
+    Philippines lost the moved photo, remaining Philippines public
+    photo took over the tile; UK gained the moved photo, UK tile
+    populated from a previously-NULL slot
+  - Test D (no-op PATCH): pass — no spurious side effects
+
+**State change to track**
+
+Workstream 3 started with Philippines fully cleaned (Stage 1 Item 1).
+During cross-country test (Test C), Philippines photos were
+re-promoted to public for test purposes, then one was moved to UK.
+**Current Philippines state at session close**: 1 public photo
+remaining (was 2 before the move). **Current UK state**: 1 public
+photo (the moved Philippines shot, currently the UK tile on the
+homepage). This is acceptable test-data drift — the photo is a real
+upload, just an "in the wrong country" one. Move it back later, or
+treat as a known quirk until proper UK photos arrive.
+
+**Carries — closed this session**
+
+- ~~Philippines test-data audit~~ (Stage 1 Item 1) — done
+- ~~Cessnock duplicate~~ (Stage 1 Item 2) — done via Test B
+- ~~Thumbnail not auto-replaced on demote/delete~~ — was implicit in
+  the old PATCH/DELETE handlers; reconciliation slice fixes it
+
+**Carries — open at session close**
+
+- Tower Bridge `capture_date` backfill — Stage 1 Item 3, deferred to
+  next session. Single-photo edit in `/admin/photos`.
+- Phase 5 real-world test with Lorraine, Mia, Alex — Stage 2, not
+  kicked off this session. Outbound message still to send.
+- Revoke `footsteps-upload-script` API token — Stage 3, deferred.
+  Two-minute task in Cloudflare dashboard.
+- Untracked working-tree triage (`docs/footsteps_architecture_post_phase_3.svg`,
+  `docs/Next Claude prompt - footsteps.txt`) — Stage 4 prerequisite,
+  deferred.
+- Create `docs/infrastructure.md` — Stage 4, deferred. Five items to
+  capture: 1 Cloudflare API token, 2 Cloudflare Access apps, 1 Web
+  Analytics site, 1 MapTiler API key.
+- Favicon 16×16 legibility — Slice C carry, deferred.
+- Node 20 deprecation on `actions/checkout@v5` / `actions/setup-node@v5`
+  — wait for `@v5` stable.
+- Move the test-uploaded photo back from UK to Philippines (or accept
+  the drift). New, very minor.
+
+**Lessons learned**
+
+1. **Pre-flight verification must cover every column referenced in
+   brief SQL, not just the most contextually-obvious ones.** The
+   brief specified `ORDER BY uploaded_at DESC` in the reconcile
+   helper. The pre-flight checklist in the brief grepped `countries`
+   column names but didn't grep `photos`. The column didn't exist;
+   PATCH 500'd on the first promotion attempt in production. Caught
+   immediately by `wrangler tail` (genuine 60-second
+   diagnose-and-fix loop) but should have been caught at design
+   time. Action: append to `docs/brief-writing-standard.md`
+   pre-flight section: *"Every column referenced in any SQL block
+   in the brief must be verified against the relevant migration
+   file. No exceptions for 'obvious' or 'standard' column names —
+   if it appears in a SELECT, INSERT, UPDATE, ORDER BY, or WHERE,
+   it gets grepped."* This is the concrete feedback for the
+   standard from this session.
+
+2. **The brief-writing standard held up well otherwise.** Eight-
+   section template was the right shape for the reconciliation
+   slice. Pre-locked decisions (4 design questions, locked one at a
+   time via tappable options) meant the brief had no clarifying
+   questions for Claude Code at build time. The verification wait-
+   budget (~90s for Worker + D1 changes) was accurate. Section 5's
+   pre-flight checklist would have caught the column defect if it
+   had been more comprehensive — see lesson 1.
+
+3. **Source verification before brief-writing was correctly
+   prioritised.** Three PowerShell commands (directory listing,
+   grep for `is_public` references, grep for `CREATE TABLE
+   countries`) revealed that the existing PATCH handler already
+   had partial reconciliation logic — clearing old slots, setting
+   new slots if NULL. The brief was rewritten to *replace* this
+   logic rather than add alongside it. Without the source read,
+   the brief would have produced a layered mess of old conditionals
+   and new helper calls.
+
+4. **Atomicity decision (SELECT subquery in UPDATE, batched)
+   paid off.** No race window where the homepage tile briefly
+   points at a deleted photo. Cleaner than the alternative
+   (resolve replacement ID in JS, then batch) for this single-
+   user, no-concurrent-writer use case. Worth documenting as a
+   pattern in `docs/` if this comes up again.
+
+5. **Mid-session scope inserts are fine when caught early and
+   scoped tightly.** The thumbnail reconciliation slice was not
+   on the Workstream 3 plan. It was identified during Stage 1
+   Item 1 cleanup (user asked "what if I want to promote a private
+   photo to public later"), scoped against the existing schema
+   invariant, locked through four design questions, built, and
+   verified — all in the same session. Took the place of Stages 3
+   and 4. Acceptable trade-off: the slice was directly relevant to
+   the "make site shareable" theme, and shipped *before* family/
+   friends saw the site. Stages 3 and 4 are admin/docs work that
+   don't block the share. Push deferred to next session.
+
+**Next session entry point**
+
+Resume Workstream 3 at Stage 1 Item 3 (Tower Bridge `capture_date`),
+then Stage 3 (token revocation), Stage 4 (file triage +
+infrastructure.md), Stage 2 (Lorraine/Mia/Alex kickoff). Update
+`docs/brief-writing-standard.md` with the column-verification rule
+from lesson 1 — small two-line edit, do it before the next slice
+brief.
