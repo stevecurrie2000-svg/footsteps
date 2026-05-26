@@ -74,6 +74,12 @@ For each new endpoint or feature surface:
       assuming (status code, JSON keys, error format)
 - [ ] Confirm the operation is on the free / current pricing tier
       (Static Maps API failed Slice 1 on this point)
+- [ ] For any brief containing SQL (SELECT, INSERT, UPDATE, DELETE,
+      or ORDER BY clauses), grep every referenced column name
+      against the relevant migration file. No exceptions for
+      "obvious" or "standard" column names — `created_at` vs
+      `uploaded_at` is the kind of mistake that 500s in production
+      and is invisible until first run
 - [ ] If the brief hard-codes any identifier returned by the
       service (style ID, region code, font name), confirm it's
       still valid
