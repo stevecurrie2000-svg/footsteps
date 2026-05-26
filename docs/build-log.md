@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 26 May 2026, 21:30
+**Last updated**: 26 May 2026, 23:30
 
 | Item | State |
 |---|---|
@@ -35,6 +35,7 @@ boundaries.
 | Phase 7 Slice 1 — Homepage map view | ✅ Done |
 | Phase 7 Slice 2 — City coordinates + free-text creation | ✅ Done |
 | Phase 7 Slice 3 — World-view cluster map + attribution fix | ✅ Done |
+| Fix: renderWorldCopies + CI placeholder guard | ✅ Done |
 | Next immediate task | Backlog cleanup sequencing (carries close-out) |
 
 ---
@@ -3446,6 +3447,47 @@ Conversation covered four areas. Decisions landed:
 - Node 20 deprecation on action wrappers — bump `@v5` when stable
 - Tower Bridge photo `capture_date` backfill via `/admin/photos`
 - Favicon 16×16 legibility check
+
+---
+
+### Fix: renderWorldCopies + CI placeholder guard (26 May 2026, 23:30)
+
+**Context**: Two independent one-liners bundled from the post-Slice 3 retro
+carries. Neither affects app logic; both close visible gaps noted during
+verification.
+
+**Fix A — `renderWorldCopies: false`**
+
+Added to the `new maplibregl.Map({...})` constructor in
+`src/pages/index.astro`. MapLibre's default (`true`) wraps the world
+horizontally, producing a ghost Panglao pin at approximately lon −237
+(the 123°E wrap) visible to the left of Australia at default world zoom.
+With `false`, the area beyond ±180° is blank canvas. Known side-effect:
+non-square viewports may not zoom out far enough to show the full world —
+pre-flight confirmed our `fitBounds([[-170, -55], [180, 75]])` initial
+view sits within those bounds and is unaffected (MapLibre issue #4510).
+
+**Fix B — CI placeholder guard**
+
+Added a "Check for unsubstituted placeholders" step to
+`.github/workflows/deploy.yml` between `npm ci` and `npm run build`.
+Runs `grep -rIn` across `src/` for `YOUR_[A-Z_]+_HERE`, `TODO_RUNTIME_KEY`,
+and `REPLACE_ME`. Exit code 0 (match found) → `exit 1` fails the deploy.
+Complements the local grep audit (section 4a of the standard doc): pre-flight
+catches "did I verify the assumption?"; CI catches "did the substitution
+actually land?" — two different failure modes.
+
+`docs/brief-writing-standard.md` section 4b corrected simultaneously: the
+original had multiple `--include` flags on one line using brace-expansion
+syntax, which is a shell feature not a grep feature. Each flag is now on its
+own line, and the error message extended to "— fix before deploying".
+
+**Verified**:
+
+- `grep -rIn -E 'YOUR_[A-Z_]+_HERE|TODO_RUNTIME_KEY|REPLACE_ME' src/` →
+  0 matches (exit 1). CI guard would pass on current tree.
+- `npm run build` clean (pre-existing chunk-size warning from maplibre, not
+  introduced by this change).
 
 **Next session pickup**
 

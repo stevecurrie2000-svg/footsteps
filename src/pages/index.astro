@@ -180,6 +180,7 @@ const pinsJson = JSON.stringify(pins.map(p => ({
         style: `https://api.maptiler.com/maps/${MAP_STYLE_ID}/style.json?key=${MAPTILER_KEY}`,
         attributionControl: false,
         interactive: true,
+        renderWorldCopies: false,
       });
 
       map.fitBounds([[-170, -55], [180, 75]], {
