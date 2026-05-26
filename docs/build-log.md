@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 28 May 2026, 09:15
+**Last updated**: 28 May 2026, 10:30
 
 | Item | State |
 |---|---|
@@ -40,7 +40,8 @@ boundaries.
 | Workstream 3 — pre-share housekeeping (Stages 1, 3, 4 closed) | ✅ Done (Stage 2 pending Alex response, Stage 5 deferred) |
 | Phase 8 Slice 1 — /admin/access user management | ✅ Done |
 | Phase 8 Slice 2 — admin landing page + public-nav admin link | ✅ Done |
-| Next immediate task | Chore: brief-writing-standard updates + GH Action version bumps |
+| Chore — pre-closure housekeeping | ✅ Done |
+| Next immediate task | None — project closure pending real-world auth test (operational) |
 
 ---
 
@@ -3872,3 +3873,43 @@ Carries forward:
   verification, "follow existing patterns", placeholder address rule, plus new
   "verify GH Actions green first" rule from this session.
 - Stage 5 housekeeping (favicon 16×16 legibility) still open.
+
+---
+
+### Session: Chore — pre-closure housekeeping (28 May 2026, 10:30)
+
+No application code changed. Three files, one commit.
+
+| File | Change |
+|---|---|
+| `docs/brief-writing-standard.md` | Folded four lessons: migration sequence verification (Lesson A), follow existing patterns (Lesson B), placeholder addresses (Lesson C), GH Actions green check first (Lesson D) |
+| `.github/workflows/deploy.yml` | Bumped `actions/checkout@v4` → `@v6`, `actions/setup-node@v4` → `@v6`. `cloudflare/wrangler-action@v3` left unchanged — no v4 exists |
+| `docs/build-log.md` | This entry + snapshot table update |
+
+This clears Pile 2 of the pre-closure stocktake. No features, no design work,
+no production impact beyond the workflow file (Node 24 runtime upgrade for two
+action wrappers). Project enters closure-pending-Alex state after this push.
+
+**Carries closed this session**
+
+- `footsteps-upload-script` API token — confirmed deleted (Steve verified in
+  CF dashboard). Build-log carry closed.
+- Architecture SVG — confirmed tracked at
+  `docs/archive/2026-05_architecture_post_phase_3.svg`. The carry reference
+  in earlier entries used wrong path (`docs/footsteps_architecture_post_phase_3.svg`);
+  corrected here.
+- Four `brief-writing-standard.md` updates — all folded in (migration number
+  verification, follow existing patterns, placeholder address rule, GH Actions
+  green check).
+- Two of three GH Actions on Node 20 — bumped to v6.
+
+**Carries that remain**
+
+- **`cloudflare/wrangler-action` Node 20 deprecation** — still @v3; no v4
+  exists yet. Deprecation warning will persist on every deploy run. Watch
+  the wrangler-action repo for v4. Hard deadline: 16 September 2026 (Node 20
+  removed from GitHub-hosted runners).
+- **Alex / Lorraine / Mia real-world auth test** — reframed as post-closure
+  ops work. Test happens organically when each user first attempts sign-in.
+  No active action needed from Steve.
+- Stage 5 housekeeping (favicon 16×16 legibility) — deferred indefinitely.

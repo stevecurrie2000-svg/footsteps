@@ -80,6 +80,21 @@ For each new endpoint or feature surface:
       "obvious" or "standard" column names — `created_at` vs
       `uploaded_at` is the kind of mistake that 500s in production
       and is invisible until first run
+- [ ] For any brief that introduces a new migration file, run
+      `Get-ChildItem migrations -Name` in pre-flight and record the
+      confirmed next number. Do not extrapolate from the last-known
+      number — a wrong migration number causes an out-of-order apply
+      that requires manual schema repair and cannot be trivially
+      reverted in D1
+- [ ] For any new endpoint, page, or component that has an existing
+      analogue in the codebase, include an explicit instruction in
+      the spec to read the analogous file first: e.g. "mirror the
+      existing pattern in `src/pages/api/admin/access/users/index.ts`
+      — read that file first; do not invent new auth/env patterns."
+      Without this, Claude Code defaults to generic framework
+      conventions instead of the project's settled ones (wrong env
+      binding access, wrong auth signature, wrong response shape are
+      all observed failure modes)
 - [ ] If the brief hard-codes any identifier returned by the
       service (style ID, region code, font name), confirm it's
       still valid
@@ -117,6 +132,13 @@ grep -rn "YOUR_X_HERE" src/
 Expect zero matches. If you get a match, the substitution missed
 an occurrence — fix it before commit, not after deploy.
 
+When writing example email addresses or other personal data in
+briefs (mock data, sample copy, documentation), use clearly
+fictional values — `example@example.com`, not the email of an
+allowlist member or Steve himself. Real addresses in briefs risk
+leaking into shipped code as hardcoded values, and they create
+confusing output in session logs that's hard to audit later.
+
 ### 4b. CI guard in GitHub Actions
 
 Add a placeholder check to `.github/workflows/deploy.yml` before
@@ -148,7 +170,27 @@ Grow the regex pattern over time as new sentinel strings emerge.
 
 ---
 
-## 5. Verification wait-budget by rendering model
+## 5. Verification walkthrough rules
+
+### 5a. First step: confirm the deploy completed green
+
+Before running any browser checks, confirm the GitHub Actions
+deploy run completed green:
+
+> Open https://github.com/stevecurrie2000-svg/footsteps/actions
+> and confirm the most recent run shows ✅. If still running,
+> wait. If red, diagnose before proceeding.
+
+Every verification walkthrough must include this as its literal
+step 1. It is not implied by "push succeeded". Pushing to main
+does not guarantee the workflow completed — transient action
+download failures, secret resolution issues, and build timeouts
+all result in a pushed commit that is not live. Running a
+verification walkthrough against the previous deploy's code is a
+particularly nasty failure mode because all checks may appear to
+pass while testing stale code.
+
+### 5b. Wait-budget by rendering model
 
 Time-based waits are a proxy for state-based readiness. Where
 possible, verify against a state signal rather than guessing how
