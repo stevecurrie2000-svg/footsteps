@@ -3709,3 +3709,33 @@ infrastructure.md), Stage 2 (Lorraine/Mia/Alex kickoff). Update
 `docs/brief-writing-standard.md` with the column-verification rule
 from lesson 1 — small two-line edit, do it before the next slice
 brief.
+
+---
+
+### Phase 8 Slice 1 — /admin/access user management (27 May 2026)
+
+Commit b99579e. 7 files: `migrations/0006_access_user_notes.sql`,
+`src/lib/cf-access.ts`, `src/pages/admin/access.astro`,
+`src/pages/api/admin/access/users/index.ts`,
+`src/pages/api/admin/access/users/[email].ts`,
+`src/components/AdminNav.astro` (Access link added),
+`src/env.d.ts` (CF_ACCESS_API_TOKEN binding declared).
+
+Migration 0006 applied locally and remotely (table `access_user_notes`).
+Worker secret `CF_ACCESS_API_TOKEN` to be added by Steve via
+`npx wrangler secret put` after deploy.
+
+Key implementation notes:
+- Migration numbered 0006 (not 0004 as brief stated — 0004 and 0005
+  were already taken by `add_photo_dimensions` and `add_city_coordinates`)
+- Brief's API code adapted to project conventions: `requireAdmin(request)`
+  (not `ctx`), `env` from `cloudflare:workers` (not `ctx.locals.runtime.env`)
+- Cloudflare API: account-scoped PUT endpoint used for reusable policy
+  (per-app endpoint returns 400, error code 12130, pre-flight verified)
+- PUT is full-body replacement; `putPolicy` preserves all original fields,
+  omits `connection_rules`, `id`, `uid`, `created_at`, `updated_at`,
+  `reusable` (server-managed)
+- Audit log filtered client-side by `app_uid` + `action === "login"` +
+  `allowed === true`; `ip_address` not surfaced (privacy)
+
+Polish: Gmail-only hint added to /admin/access add form (27 May 2026)
