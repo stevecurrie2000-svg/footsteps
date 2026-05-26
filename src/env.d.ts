@@ -5,11 +5,14 @@ interface Env {
   DB: D1Database;
   PHOTOS: R2Bucket;
   ASSETS: Fetcher;
+  SESSION: KVNamespace;
   CF_ACCESS_API_TOKEN?: string;
 }
 
 type Runtime = import('@astrojs/cloudflare').Runtime<Env>;
 
 declare namespace App {
-  interface Locals extends Runtime {}
+  interface Locals extends Runtime {
+    viewerIsAdmin: boolean;
+  }
 }

@@ -12,6 +12,10 @@ function isActive(href: string) {
     <a
       href="/admin"
       class:list={["text-sm transition-colors", isActive("/admin") ? "text-foreground" : "text-foreground/40 hover:text-foreground/60"]}
+    >Home</a>
+    <a
+      href="/admin/upload"
+      class:list={["text-sm transition-colors", isActive("/admin/upload") ? "text-foreground" : "text-foreground/40 hover:text-foreground/60"]}
     >Upload</a>
     <a
       href="/admin/photos"

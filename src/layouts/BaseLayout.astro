@@ -12,6 +12,7 @@ interface Props {
   ogType?: 'website' | 'article';
 }
 const { title = "Footsteps", isPrivate = false, isAdmin = false, ogTitle, ogDescription, ogImage, ogType } = Astro.props;
+const showAdminLink = Astro.locals.viewerIsAdmin && !isAdmin;
 ---
 
 <!doctype html>
@@ -64,6 +65,14 @@ const { title = "Footsteps", isPrivate = false, isAdmin = false, ogTitle, ogDesc
           >
             Private
           </a>
+          {showAdminLink && (
+            <a
+              href="/admin"
+              class="ml-6 text-sm text-[#fafafa]/60 transition-colors duration-200 hover:text-[#fafafa]"
+            >
+              Admin
+            </a>
+          )}
         </div>
       </nav>
     </header>
