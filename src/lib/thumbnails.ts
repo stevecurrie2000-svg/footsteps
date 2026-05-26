@@ -11,7 +11,7 @@ export function reconcileCountryThumbnailStatements(
        SET public_thumbnail_photo_id = (
          SELECT id FROM photos
          WHERE country_id = ?1 AND is_public = 1
-         ORDER BY uploaded_at DESC, id DESC
+         ORDER BY created_at DESC, id DESC
          LIMIT 1
        )
        WHERE id = ?1`
@@ -22,7 +22,7 @@ export function reconcileCountryThumbnailStatements(
        SET private_thumbnail_photo_id = (
          SELECT id FROM photos
          WHERE country_id = ?1 AND is_public = 0
-         ORDER BY uploaded_at DESC, id DESC
+         ORDER BY created_at DESC, id DESC
          LIMIT 1
        )
        WHERE id = ?1`
