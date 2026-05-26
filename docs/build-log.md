@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 26 May 2026, 17:55
+**Last updated**: 26 May 2026, 21:30
 
 | Item | State |
 |---|---|
@@ -35,7 +35,7 @@ boundaries.
 | Phase 7 Slice 1 — Homepage map view | ✅ Done |
 | Phase 7 Slice 2 — City coordinates + free-text creation | ✅ Done |
 | Phase 7 Slice 3 — World-view cluster map + attribution fix | ✅ Done |
-| Next immediate task | Verify cluster map in production; Phase 5 real-world test |
+| Next immediate task | Backlog cleanup sequencing (carries close-out) |
 
 ---
 
@@ -2568,6 +2568,13 @@ until 100+ photos exist across 5+ countries.
   three were testable in ~5 minutes via curl before the brief was written.
   For future briefs that depend on third-party APIs: spend 10 minutes hitting
   each planned endpoint with a real key before writing a line of source code.
+- **Brief-writing is now a documented standard.** After Slice 1's three
+  iterations and Slices 2 + 3 shipping clean using the pre-flight pattern,
+  the lessons have been codified in `docs/brief-writing-standard.md`.
+  Covers when pre-flight applies, the eight-section template, local + CI
+  grep guards for `YOUR_X_HERE` placeholders, and verification wait-budgets
+  by rendering model (Astro vs MapLibre vs R2 images vs Access redirects).
+  Read it before writing any slice brief.
 
 **Working with Claude Code**
 
@@ -3339,3 +3346,110 @@ Removed: bounding box frontmatter computation, `data-sw-lon/lat/ne-lon/lat` attr
 - `clusterMaxZoom: 6` — clustering stops at country-detail zoom level
 - `clusterRadius: 40` — ~40px triggers merge
 - `[[-170, -55], [180, 75]]` — world bounds (crops Antarctica, keeps Pacific)
+
+---
+
+### Session: Phase 7 Slice 3 verification + brief-writing retro (26 May 2026, 21:30)
+
+**Context**: Post-Slice 3 close-out. Two workstreams: (1) eyeball-
+verify the three Slice 3 carries left open at last session close, and
+(2) the brief-writing retrospective that's been deferred twice. Slice 3
+shipped without a single follow-up commit — the first Phase 7 slice to
+do so — and Slice 2 before it had the same result. Two clean briefs
+using the new pre-flight pattern, after Slice 1 took three iterations
+without it. Enough signal to draw real lessons.
+
+**Workstream 1 — Slice 3 verification ✅**
+
+All three carries from the Slice 3 close-out walked through via the
+Chrome extension against `https://footsteps.gallery`:
+
+- **Hover popup**: ✅ PASS. "LONDON — 1 PHOTO" and "PANGLAO — 2 PHOTOS"
+  both render with the `.footsteps-pin-popup` small-caps dark style
+  (dark fill, white text, em-dash separator, downward tail to pin).
+- **Pin click → country navigation**: ✅ PASS. London → `/countries/
+  united-kingdom`, Panglao → `/countries/philippines`. Both pages load
+  with correct H1, small-caps city heading, and photo grid.
+- **🌍 reset button animation**: ✅ PASS. After three zoom-ins to north
+  Africa, click → smooth easeTo back to world view (centre [20, 30],
+  zoom 1, 600ms). Mid-animation screenshot at 300ms shows transition
+  in progress; final screenshot at 1.3s shows full world bounds restored.
+
+Slice 3 is genuinely closed.
+
+**Two cosmetic observations recorded (neither a defect)**:
+
+- The `renderWorldCopies: true` default still shows a ghost Panglao
+  pin in the Pacific to the left of Australia. The one-liner fix
+  remains a carry — to be folded into Slice 4 or shipped standalone.
+- Hover popup persists when cursor moves pin-to-pin without crossing
+  empty space (no `mouseleave` fires on the unclustered-point layer).
+  Standard MapLibre behaviour; deferrable. Only manifests with very
+  few pins on screen.
+
+**Workstream 2 — Brief-writing retrospective ✅**
+
+Conversation covered four areas. Decisions landed:
+
+1. **When the pre-flight step applies** — third-party API AND first
+   time hitting that specific endpoint or feature surface. "Feature
+   surface" includes a new query type on a known endpoint (e.g.
+   Nominatim forward-geocode vs reverse-geocode). Tighter than
+   "every brief" (which would create checkbox ceremony) but firmer
+   than "judgement call" (which is what produced Slice 1).
+2. **Verification wait-budget by rendering model** — Astro pages
+   3–4s, MapLibre 6–8s with popup-on-pin as state probe, R2 image
+   grids wait-until-render, Access redirects 5–7s. Time-based waits
+   are a proxy for state-based readiness; prefer state probes where
+   available. Pairs with "if you see no content, wait once more
+   before calling it broken" — the Slice 3 verification misread of
+   "still loading" as "broken" was the prompt.
+3. **CI grep guard for `YOUR_X_HERE` placeholders** — add it. Roughly
+   five lines of YAML in `.github/workflows/`, runs in under a second,
+   catches a class of bug the pre-flight pattern doesn't (verified
+   assumption + missed substitution). Cheap preventive control
+   complementing the detective pre-flight and corrective revert
+   workflow. Three controls for a failure mode that ships visibly
+   broken is proportionate.
+4. **Brief structure standardisation** — codified the eight-section
+   template (Context → Pre-flight verified → Files to change →
+   Detailed specs → Verification walkthrough → Out of scope →
+   Build-log discipline → Conventions). Lives in a new standalone
+   doc rather than folded into Lessons, because reference material
+   has a different reader and lifespan than narrative history.
+
+**Deliverables**:
+
+- New: `docs/brief-writing-standard.md` — single-file reference,
+  ~1.5 pages on a laptop. Read before writing any slice brief.
+- This session entry, plus one new Documentation bullet in the
+  Lessons section linking to the new doc.
+
+**Carries (updated)**
+
+- `renderWorldCopies: false` one-liner — decision pending (Slice 4
+  bundle vs standalone commit)
+- Hover-popup-persistence on pin-to-pin moves — defer, cosmetic
+- CI grep guard implementation — add to `.github/workflows/` per
+  standard doc section 4b. Five-line YAML patch, not yet committed
+- Phase 5 real-world test with Lorraine/Mia/Alex — still pending
+- `infrastructure.md` doc — still not created; now five entries to
+  capture (1 Cloudflare API token, 2 Access apps, 1 Web Analytics
+  site, 1 MapTiler key)
+- Test-data audit — Philippines public test photos to re-tag private
+  before family/friends visit
+- `footsteps-upload-script` API token — still pending revocation
+- Cessnock test photo de-dupe via `/admin/photos`
+- `docs/footsteps_architecture_post_phase_3.svg` and
+  `docs/Next Claude prompt - footsteps.txt` — untracked, decisions
+  pending
+- Node 20 deprecation on action wrappers — bump `@v5` when stable
+- Tower Bridge photo `capture_date` backfill via `/admin/photos`
+- Favicon 16×16 legibility check
+
+**Next session pickup**
+
+Backlog cleanup sequencing (the deferred Workstream 3 from this
+handoff). The intent is to close out the open carries in the right
+order and reach a properly-finished state to share with family and
+friends. No new slices planned.
