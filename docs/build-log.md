@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 27 May 2026, 02:00
+**Last updated**: 27 May 2026, 09:50
 
 | Item | State |
 |---|---|
@@ -37,8 +37,9 @@ boundaries.
 | Phase 7 Slice 3 — World-view cluster map + attribution fix | ✅ Done |
 | Fix: renderWorldCopies + CI placeholder guard | ✅ Done |
 | Thumbnail reconciliation on photo PATCH/DELETE | ✅ Done |
-| Workstream 3 — pre-share housekeeping (Stage 1 items 1+2) | ✅ Done |
-| Next immediate task | Stage 1 Item 3 (Tower Bridge capture_date), then Stage 3 token revocation, Stage 4 docs |
+| Workstream 3 — pre-share housekeeping (Stages 1, 3, 4 closed) | ✅ Done (Stage 2 pending Alex response, Stage 5 deferred) |
+| Phase 8 Slice 1 — /admin/access user management | ✅ Done |
+| Next immediate task | Phase 8 Slice 2 — polished admin landing page (after Alex auth test confirms) |
 
 ---
 
@@ -3709,6 +3710,76 @@ infrastructure.md), Stage 2 (Lorraine/Mia/Alex kickoff). Update
 `docs/brief-writing-standard.md` with the column-verification rule
 from lesson 1 — small two-line edit, do it before the next slice
 brief.
+
+---
+
+### Session: Workstream 3 closure + Phase 8 Slice 1 — /admin/access user management (27 May 2026, 09:50)
+
+**Goal**: Close out deferred Workstream 3 items + ship an unplanned-but-substantial Phase 8 Slice 1 (`/admin/access` user management) that emerged mid-session from a user-driven scope expansion.
+
+**Closed this session**
+
+- **Stage 1 Item 3 — Tower Bridge `capture_date` backfill**. The Phase 3-era manual seed had a NULL `capture_date`. Investigation revealed `capture_date` column exists in the schema (column 3 of `photos`) but isn't surfaced in the `/admin/photos` edit modal. Cross-check across all photos confirmed only Tower Bridge was NULL — every other photo has a populated date from EXIF parsing, so a UI surface-up wasn't justified. Fixed via single D1 UPDATE: value `2026-05-17T23:06:18.000Z` matching the row's `created_at`. Verified format-consistent with the rest of the table (ISO 8601 with milliseconds and Z suffix). Acceptable trade-off — the placeholder value is honest about its nature (matches upload time, not a EXIF-derived capture time).
+
+- **Phase 8 Slice 1 — `/admin/access` user management**. Full-fat v1: list current allowlist with notes and last-sign-in column, add new users (Gmail-only validation), remove users (confirm modal, self-row protection), edit notes inline. Responsive table/card hybrid layout per Q9. Source of truth is Cloudflare's Access policy; D1 holds notes only. Two API endpoints (`/api/admin/access/users` for list+add; `/api/admin/access/users/[email]` for delete+patch-note). New shared library `src/lib/cf-access.ts` wraps the Cloudflare Access API surface. Migration `0006_access_user_notes.sql` adds the notes table. Bound via new Worker secret `CF_ACCESS_API_TOKEN`. Verified across 13 steps including live add/remove cycles against the Cloudflare API and dashboard cross-checks. Mobile responsive verified on actual phone (Steve's words: "looks slick"). Commit `b99579e` plus follow-up micro-fix for the Gmail-only hint under "Add user" heading.
+
+- **Pre-flight against Cloudflare Access API** (per `brief-writing-standard.md` section 3) — 4 probes against the live account, including the destructive PUT round-trip to add and remove a test address. Two design-breaking findings caught: (1) **reusable policies cannot be updated via the per-app endpoint** — error code 12130; the Private viewers policy is reusable and required the account-scoped endpoint `/accounts/{aid}/access/policies/{pid}` instead. (2) **PUT semantics are full-body replacement, not partial** — every PUT must preserve `decision`, `name`, `include`, `exclude`, `require`, `precedence`. Both findings baked into the brief before any code was written; the slice shipped without API-shape rework.
+
+- **Stage 3 — `footsteps-upload-script` API token revoked**. Three independent pre-revoke checks (PowerShell `Select-String` of source code, `npx wrangler secret list`, Cloudflare dashboard's "Last used" column) confirmed no active dependency anywhere. The carry has been recorded as "still pending" across roughly 19 session entries; closed in 2 minutes once actually addressed. Lesson on session-overhead patterns noted below.
+
+- **Stage 4a — Untracked working-tree files triaged and resolved**. Commit `0932031`:
+  - `docs/footsteps-project-brief.md` — committed (was never tracked; would have been lost on laptop failure). Surprise that this critical file wasn't in git
+  - `docs/footsteps_architecture_post_phase_3.svg` — moved to new `docs/archive/` folder with date prefix (`2026-05_architecture_post_phase_3.svg`). Preserves as historical reference; signals via filename that it's superseded
+  - `docs/Next Claude prompt - footsteps.txt` — gitignored by exact filename (Steve uses these as session-handoff scratchpads; legitimate working files that shouldn't be in repo)
+
+- **Stage 4b — `docs/infrastructure.md` created** (commit `b5d400a`). 12-item richer version (vs. the original 5-item plan): account ownership, domain registration, Worker bindings (4 of them: ASSETS, DB, PHOTOS, SESSION KV), D1 database UUID, R2 bucket, KV namespace, both Access apps with policy IDs, both active API tokens with rotation procedures, Web Analytics, MapTiler, GitHub repo. Two placeholders to fill in follow-up: Web Analytics site UUID, GitHub Actions secret name verification.
+
+- **Stage 2 — Pilot test email sent to Alex** (`alexcurrie429@gmail.com`). Email mentions the new `/admin/access` page transparently (timestamps only, not viewing history). Alex's response and verification close out async over next 1-2 days. Lorraine and Mia rollout conditional on Alex's success.
+
+**Lessons learned**
+
+1. **Pre-flight value confirmed on a larger API surface.** Same standard applied to Cloudflare Access API (vs. last session's Nominatim) caught two design-breaking findings before any code was written. Both findings (reusable-policy endpoint, full-body PUT) were invisible from the docs and would have produced repeated 400s in production. Pattern holds — pre-flight cost ~20 minutes; revision cost after a broken deploy would have been hours.
+
+2. **Migration sequence numbers must be verified, not assumed.** Brief specified `0004_access_user_notes.sql`; actual next number was `0006` (migrations `0004_add_photo_dimensions` and `0005_add_city_coordinates` had landed in unrecorded slices since last memory update). Claude Code corrected, no harm done. **Action**: append to `docs/brief-writing-standard.md` pre-flight section: *"Migration sequence numbers must be verified by listing `migrations/` directory before writing the brief — assuming N+1 from project memory or build-log entries is unreliable."*
+
+3. **Brief code blocks should defer to "follow existing patterns" rather than invent new ones for project-specific surfaces.** Brief used `requireAdmin(ctx)` and `ctx.locals.runtime.env.*`; project's actual conventions are `requireAdmin(request)` and `env.*` via `cloudflare:workers` import. Both corrected by Claude Code at build time. **Action**: append to standard: *"For brief code involving auth gating, env-binding access, or other project-specific imports, write 'mirror the pattern in existing endpoint X' rather than writing speculative code. Generic Astro/Workers documentation does not reflect this project's specific conventions."*
+
+4. **Pre-flight test data must use addresses verified against the actual account, not "plausible" placeholders.** Pre-flight initially used `steve+pretestaccess@gmail.com` as a test address — not actually a Gmail alias of `stevecurrie2000@gmail.com` (would deliver to a real other person, or bounce). Caught when Steve queried it during the user-facing verification step. Round-trip was harmless because no actual email delivery happened during pre-flight, but the principle was sloppy. Verification corrected to use real alias `stevecurrie2000+pretestaccess@gmail.com`. **Action**: append to standard: *"Any verification test address that ends up on a live external system must be a verified alias of the account in use, not a constructed placeholder."*
+
+5. **Cloudflare API token TTLs are approximate to month boundaries.** Token requested with 27 May 2027 expiry shows as expiring 1 April 2027 in the dashboard — date picker rounded down. Cosmetic but worth knowing: budget calendar reminders for ~30 days before the displayed expiry, not the requested expiry. Reminder set for ~1 March 2027.
+
+6. **Stale "next session" handoff files should be gitignored, not deleted.** Initial recommendation to delete the working scratchpad was wrong — Steve uses these as drafting workspace for the next session's handoff prompt. Workspace files → gitignore by exact filename; shared truth → commit.
+
+7. **Two-minute admin tasks accumulate session-over-session.** The `footsteps-upload-script` revoke has been on the carries list for ~19 session entries. The fix isn't "more discipline"; it's catching them earlier in a session when the queue is short, or batching them deliberately at a quiet moment. Worth a section in `brief-writing-standard.md` on managing the carries list itself.
+
+8. **Build-log update workflow standardised**: this chat produces a copy-paste-ready brief for Claude Code to append the session entry to `docs/build-log.md`. The chat-produced brief is the source of truth; the project-knowledge copy on `claude.ai` is manually synced afterwards, expected to lag the laptop copy.
+
+**Carries — closed this session**
+
+- ~~Tower Bridge `capture_date` backfill~~
+- ~~`footsteps-upload-script` API token revoke~~ (~19 session entries deep)
+- ~~Untracked working-tree files (project brief, architecture SVG, Next Claude prompt)~~
+- ~~`docs/infrastructure.md` creation~~
+- ~~Phase 5 real-world auth test — Alex kickoff~~ (verification pending Alex's response, but kickoff complete)
+
+**Carries — open at session close**
+
+- **Alex's verification response** — async over next 1-2 days
+- **Lorraine + Mia rollout** — conditional on Alex's success
+- **`docs/infrastructure.md` placeholders** — Web Analytics site UUID, GitHub Actions secret name verification. Single follow-up commit
+- **`brief-writing-standard.md` updates from this session's lessons** — three small additions (migration sequence verification, "follow existing patterns" guidance, placeholder address rule). Edit before the next slice brief
+- **Phase 8 Slice 2 — polished admin landing page** — design session needed before any brief
+- **Welcome-email feature** — deliberately deferred. Revisit only if allowlist grows past ~50 entries
+- **Stage 5 housekeeping** — favicon 16×16 legibility, Node 20 deprecation on `@v5` action wrappers, UK city-variant naming
+- **Tower Bridge capture date as placeholder** — if the original `test-photo.jpg` is ever located, real EXIF date could replace the upload-timestamp value. Low priority
+
+**State changes to track**
+
+- Footsteps Private allowlist verified at 4 entries (Steve, Lorraine, Mia, Alex). Test additions/removals round-tripped successfully against Cloudflare's authoritative store
+- New files: `docs/infrastructure.md`, `docs/archive/` directory
+- API token inventory: 2 active (`footsteps-github-actions-deploy` no-expiry, `footsteps-access-api-2026-05` expires 1 April 2027), 1 revoked (`footsteps-upload-script`)
+- New Worker secret: `CF_ACCESS_API_TOKEN`
+- D1 schema: `access_user_notes` table added via migration 0006
 
 ---
 
