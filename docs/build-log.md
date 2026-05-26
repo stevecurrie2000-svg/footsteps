@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 27 May 2026, 09:50
+**Last updated**: 28 May 2026, 09:15
 
 | Item | State |
 |---|---|
@@ -39,7 +39,8 @@ boundaries.
 | Thumbnail reconciliation on photo PATCH/DELETE | ✅ Done |
 | Workstream 3 — pre-share housekeeping (Stages 1, 3, 4 closed) | ✅ Done (Stage 2 pending Alex response, Stage 5 deferred) |
 | Phase 8 Slice 1 — /admin/access user management | ✅ Done |
-| Next immediate task | Phase 8 Slice 2 — polished admin landing page (after Alex auth test confirms) |
+| Phase 8 Slice 2 — admin landing page + public-nav admin link | ✅ Done |
+| Next immediate task | Chore: brief-writing-standard updates + GH Action version bumps |
 
 ---
 
@@ -3810,3 +3811,64 @@ Key implementation notes:
   `allowed === true`; `ip_address` not surfaced (privacy)
 
 Polish: Gmail-only hint added to /admin/access add form (27 May 2026)
+
+---
+
+### Phase 8 Slice 2 — Admin landing page + public-nav admin link (28 May 2026)
+
+Commit 642cbae. 7 files: `src/middleware.ts` (new),
+`src/env.d.ts`, `src/layouts/BaseLayout.astro`,
+`src/pages/admin/index.astro` (replaced), `src/pages/admin/upload.astro` (new),
+`src/components/AdminNav.astro`, `src/pages/api/admin/dashboard.ts` (new).
+
+What shipped:
+- `src/middleware.ts`: best-effort JWT check on every request, decorates
+  `Astro.locals.viewerIsAdmin`; swallows all errors (decoration-only, never a gate)
+- `src/env.d.ts`: added `SESSION: KVNamespace` and `viewerIsAdmin: boolean`
+  to `App.Locals`
+- `BaseLayout.astro`: conditional Admin link in public nav, rendered only when
+  `viewerIsAdmin && !isAdmin` (hidden on admin pages, not shown to non-admins)
+- `admin/index.astro`: new landing page — welcome chrome, 5 stat tiles
+  (photos, countries, last upload, allowlist, storage), 4 section links
+- `admin/upload.astro`: verbatim move of the old index.astro (upload pipeline)
+- `AdminNav.astro`: Home link added as first item; Upload href updated to
+  `/admin/upload`. Final nav order: Home | Upload | Photos | Countries | Access
+- `api/admin/dashboard.ts`: stats endpoint; queries D1 for counts, lists R2
+  objects for storage bytes, calls CF Access API for allowlist count; 5-min
+  SESSION KV cache (CACHE_KEY `admin:dashboard`)
+
+Key implementation notes:
+- Cache TTL shipped at 300s (brief spec'd 3600s). More responsive for new
+  uploads; R2 list cost is negligible. Deliberate deviation kept.
+- `allowlistCount` returns null (renders "—") if `CF_ACCESS_API_TOKEN` is absent
+- R2 storage uses cursor-paginated `PHOTOS.list()` to handle large buckets
+- Middleware file did not pre-exist; created from scratch
+
+Deviations from brief:
+- Cache TTL: 300s shipped vs 3600s specified (see notes above)
+- Middleware created new (pre-flight confirmed no existing middleware.ts)
+
+Lessons:
+1. "Push to main" ≠ "deployed". Initial deploy failed silently with a transient
+   GitHub Actions network error (wrangler-action@v3 download blip). Reported
+   as deployed based on push succeeding. Caught only during verification prep.
+   Action: brief-writing-standard must require "confirm GitHub Actions run
+   completed green" as the literal first verification step before any browser
+   checks.
+2. Pre-flight prevented broken R2 storage tile. Photos table has no size_bytes
+   column — planned D1-based approach would have shipped broken. Pivoted to
+   R2 list + KV cache before writing any code.
+3. Pre-flight caught the index.astro rename surprise. Assumption was "create
+   new landing page file". Pre-flight revealed index.astro was the upload page,
+   making this a rename-plus-new task rather than just-new.
+
+Carries forward:
+- **Node 20 deprecation in GH Actions** — warning on successful run. Three
+  affected: `actions/checkout@v4`, `actions/setup-node@v4`,
+  `cloudflare/wrangler-action@v3`. Forced to Node 24 on 2 June 2026, removed
+  16 September 2026. Bump to current majors. ~5-min job.
+- **Alex auth verification** — still pending. Lorraine + Mia rollout conditional.
+- **Four brief-writing-standard updates pending** — migration sequence
+  verification, "follow existing patterns", placeholder address rule, plus new
+  "verify GH Actions green first" rule from this session.
+- Stage 5 housekeeping (favicon 16×16 legibility) still open.
