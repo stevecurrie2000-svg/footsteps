@@ -3935,3 +3935,25 @@ created for the rasterisation step then deleted before commit.
   is slightly more legible than the old at 32px but still loses definition at
   16px — inherent to a detailed-foot silhouette at that size. Resolving would
   mean a simplified secondary glyph; separate design call.
+
+---
+
+### Session: Chore — revert favicon to Astro default (28 May 2026, 12:15)
+
+Four files, one commit.
+
+| File | Change |
+|---|---|
+| `public/favicon.svg` | Restored Astro default (the stock rocket-wedge SVG). Replaces the custom footprint introduced in Slice C |
+| `public/apple-touch-icon.png` | Deleted. The custom design wasn't landing; reverting to "no custom apple-touch-icon" rather than maintaining a broken one |
+| `src/layouts/BaseLayout.astro` | Removed `<link rel="apple-touch-icon" sizes="180x180">`. Existing `<link rel="icon" type="image/svg+xml">` left in place — still correct |
+| `docs/build-log.md` | This entry |
+
+Custom favicon design parked indefinitely. Revisit when there's a clearer
+visual direction.
+
+**Carries — closed by this session**
+- Favicon 16×16 legibility (Slice C carry) — moot. No custom favicon, no legibility problem.
+
+**Carries — still open**
+- None added.
