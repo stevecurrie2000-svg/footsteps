@@ -8,7 +8,7 @@ const auth = await requireAdmin(Astro.request);
 if (auth instanceof Response) return auth;
 ---
 
-<BaseLayout title="Access — Footsteps Admin" isAdmin={true}>
+<BaseLayout title="Access — Admin — Footsteps" isAdmin={true}>
   <div class="mx-auto max-w-4xl px-6 py-10">
 
     <!-- Add user form -->

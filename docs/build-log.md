@@ -3957,3 +3957,42 @@ visual direction.
 
 **Carries — still open**
 - None added.
+
+---
+
+### Session: Chore — simplify browser tab titles (28 May 2026, 14:00)
+
+Dropped "— Europe Photography" suffix from homepage. Tab titles now follow `{context} — Footsteps` pattern, with homepage as just "Footsteps".
+
+| File | Change |
+|---|---|
+| `src/layouts/BaseLayout.astro` | No change needed — already renders `title` prop verbatim and defaults to `"Footsteps"` |
+| `src/pages/index.astro` | `title="Footsteps — Europe Photography"` → `title="Footsteps"` |
+| `src/pages/404.astro` | `title="Off the path — Footsteps"` → `title="Not Found — Footsteps"` |
+| `src/pages/admin/access.astro` | `title="Access — Footsteps Admin"` → `title="Access — Admin — Footsteps"` |
+| `src/pages/admin/photos/index.astro` | `title="Admin — Photos"` → `title="Photos — Admin — Footsteps"` |
+| `src/pages/admin/upload.astro` | `title="Admin — Upload"` → `title="Upload — Admin — Footsteps"` |
+| `src/pages/admin/countries/index.astro` | `title="Countries & Cities — Admin"` → `title="Countries — Admin — Footsteps"` |
+| `docs/build-log.md` | This entry |
+
+Already-correct pages (no change needed): `src/pages/private/index.astro`, `src/pages/private/countries/[slug].astro`, `src/pages/countries/[slug].astro`, `src/pages/admin/index.astro`.
+
+**Tab title pattern** (new convention):
+
+| Page | Tab title |
+|---|---|
+| `/` | Footsteps |
+| `/countries/[slug]` | {country.name} — Footsteps |
+| `/private` | Private — Footsteps |
+| `/private/countries/[slug]` | {country.name} — Private — Footsteps |
+| `/admin` | Admin — Footsteps |
+| `/admin/upload` | Upload — Admin — Footsteps |
+| `/admin/photos` | Photos — Admin — Footsteps |
+| `/admin/countries` | Countries — Admin — Footsteps |
+| `/admin/access` | Access — Admin — Footsteps |
+| `/404` | Not Found — Footsteps |
+
+Future pages should set `<BaseLayout title="...">` using the `{context} — Footsteps` (or `{context} — Admin — Footsteps`) pattern.
+
+**Carries — still open**
+- None added.
