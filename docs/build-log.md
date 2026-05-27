@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 28 May 2026, 10:30
+**Last updated**: 28 May 2026, 11:30
 
 | Item | State |
 |---|---|
@@ -3913,3 +3913,25 @@ action wrappers). Project enters closure-pending-Alex state after this push.
   ops work. Test happens organically when each user first attempts sign-in.
   No active action needed from Steve.
 - Stage 5 housekeeping (favicon 16×16 legibility) — deferred indefinitely.
+
+---
+
+### Session: Chore — favicon replacement (28 May 2026, 11:30)
+
+Two binary files, one commit.
+
+| File | Change |
+|---|---|
+| `public/favicon.svg` | Replaced Slice C hand-drawn version with a potrace-traced SVG of Steve's new outlined-foot image. Same 64×64 viewBox, same `#0a0a0a` background, same `#fafafa` foreground. Two paths (toe bean + main foot shape) |
+| `public/apple-touch-icon.png` | Regenerated 180×180 from the new SVG via `sharp` with `density: 1500` |
+| `docs/build-log.md` | This entry |
+
+No code changes. No schema changes. Existing `<link>` tags in `BaseLayout.astro`
+already pointed at the right paths. Temp script `scripts/build-apple-touch.mjs`
+created for the rasterisation step then deleted before commit.
+
+**Carries — still open**
+- Favicon 16×16 legibility (Slice C carry, deferred indefinitely). New design
+  is slightly more legible than the old at 32px but still loses definition at
+  16px — inherent to a detailed-foot silhouette at that size. Resolving would
+  mean a simplified secondary glyph; separate design call.
