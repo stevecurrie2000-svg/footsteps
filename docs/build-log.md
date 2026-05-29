@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 30 May 2026, 21:57
+**Last updated**: 30 May 2026, 22:30
 
 | Item | State |
 |---|---|
@@ -41,8 +41,9 @@ boundaries.
 | Phase 8 Slice 1 — /admin/access user management | ✅ Done |
 | Phase 8 Slice 2 — admin landing page + public-nav admin link | ✅ Done |
 | Chore — pre-closure housekeeping | ✅ Done |
-| Phase D Slice D1 — Online-only diary at `/admin/diary` | ✅ Done (deploy pending verification) |
-| Next immediate task | Verify Phase D Slice D1 on live site (see verification checklist below) |
+| Phase D Slice D1 — Online-only diary at `/admin/diary` | ✅ Done |
+| Chore — diary delete button | ✅ Done (deploy pending verification) |
+| Next immediate task | Verify diary delete on live site |
 
 ---
 
@@ -2593,6 +2594,42 @@ until 100+ photos exist across 5+ countries.
 - `footsteps-upload-script` API token — still pending revocation
 - `docs/footsteps_architecture_post_phase_3.svg` — still untracked
 - Node 20 deprecation on action wrappers — bump `@v5` when stable
+
+---
+
+### Chore: diary delete button (30 May 2026, 22:30)
+
+**Context**: Phase D Slice D1 shipped with a working DELETE API but no delete
+affordance in the UI. The event delegation handler and `syncFormButtons` helper
+were already written but never wired up.
+
+**Root cause**: `renderEntries` never added a `.delete-btn` element to each
+article, so the handler in `container.addEventListener("click", ...)` had
+nothing to fire on. `syncFormButtons` (which injects a "Delete" button into the
+form's action row during edit mode) was defined but never called — `populateForm`
+and `resetForm` left it dormant. Two dead `_origPopulate`/`_origReset` variable
+assignments were also left over from an incomplete patching attempt.
+
+**What was changed** (`src/pages/admin/diary.astro` only)
+
+- `renderEntries`: dateline row now includes both "edit" and "delete" buttons
+  inside a shared `<span>` that fades in on `group-hover`. Delete button uses
+  `text-foreground/25 hover:text-red-400/70` — same weight as "edit", slightly
+  warmer hover to distinguish destructive intent without being a loud red button.
+- `populateForm`: calls `syncFormButtons()` after setting `editingId`, injecting
+  the "Delete" button into the form action row.
+- `resetForm`: calls `syncFormButtons()` after clearing `editingId`, removing
+  the form-mode "Delete" button.
+- Removed the two dead `_origPopulate`/`_origReset` assignments.
+
+No API changes. No D1 changes.
+
+**Verification** (live site after Actions deploy)
+
+1. `/admin/diary` → each entry shows "edit" and "delete" on hover.
+2. Write throwaway entry, delete it → confirm prompt → entry gone without reload.
+3. Reload → entry stays gone (D1 confirmed).
+4. Cancel confirm on another entry → entry remains.
 
 ---
 

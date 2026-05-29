@@ -187,10 +187,16 @@ if (auth instanceof Response) return auth;
       article.innerHTML = `
         <div class="flex items-baseline justify-between gap-4">
           <p class="font-serif text-sm italic text-foreground/45">${escapeHtml(dateline)}</p>
-          <button
-            class="edit-btn shrink-0 text-xs text-foreground/25 hover:text-foreground/60 transition-colors opacity-0 group-hover:opacity-100"
-            data-id="${escapeHtml(entry.id)}"
-          >edit</button>
+          <span class="flex shrink-0 gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              class="edit-btn text-xs text-foreground/25 hover:text-foreground/60 transition-colors"
+              data-id="${escapeHtml(entry.id)}"
+            >edit</button>
+            <button
+              class="delete-btn text-xs text-foreground/25 hover:text-red-400/70 transition-colors"
+              data-id="${escapeHtml(entry.id)}"
+            >delete</button>
+          </span>
         </div>
         <div class="mt-2 h-px bg-white/10"></div>
         ${titleHtml}
@@ -233,6 +239,7 @@ if (auth instanceof Response) return auth;
     saveBtn.textContent = "Save entry";
     cancelBtn.classList.add("hidden");
     formError.classList.add("hidden");
+    syncFormButtons();
     fieldBody.focus();
   }
 
@@ -246,6 +253,7 @@ if (auth instanceof Response) return auth;
     saveBtn.textContent = "Update entry";
     cancelBtn.classList.remove("hidden");
     formError.classList.add("hidden");
+    syncFormButtons();
     fieldBody.focus();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -388,10 +396,6 @@ if (auth instanceof Response) return auth;
       saveBtn.parentElement!.appendChild(del);
     }
   }
-
-  // Patch populateForm and resetForm to also sync buttons
-  const _origPopulate = populateForm;
-  const _origReset = resetForm;
 
   // ── Init ────────────────────────────────────────────────────────
 
