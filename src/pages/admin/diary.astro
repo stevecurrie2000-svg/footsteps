@@ -134,15 +134,16 @@ if (auth instanceof Response) return auth;
     if (entry.entry_date) {
       const [year, month, day] = entry.entry_date.split("-").map(Number);
       const d = new Date(year, month - 1, day);
-      const dayStr = d.getDate();
+      const weekday = d.toLocaleString("en-AU", { weekday: "long" });
+      const dayNum = d.getDate();
       const monthStr = d.toLocaleString("en-AU", { month: "long" });
-      parts.push(`${dayStr} ${monthStr} ${year}`);
+      parts.push(`${weekday} ${dayNum} ${monthStr}`);
     }
 
     if (entry.entry_time) parts.push(entry.entry_time);
     if (entry.location_label) parts.push(entry.location_label);
 
-    return parts.join("  ·  ");
+    return parts.join(" · ");
   }
 
   function escapeHtml(s: string): string {
@@ -231,7 +232,7 @@ if (auth instanceof Response) return auth;
 
   function resetForm() {
     editingId = null;
-    fieldDate.value = "";
+    fieldDate.value = new Date().toISOString().slice(0, 10);
     fieldTime.value = "";
     fieldLocation.value = "";
     fieldTitle.value = "";
@@ -399,12 +400,7 @@ if (auth instanceof Response) return auth;
 
   // ── Init ────────────────────────────────────────────────────────
 
-  // Pre-fill today's date
-  const today = new Date();
-  const yyyy = today.getFullYear();
-  const mm = String(today.getMonth() + 1).padStart(2, "0");
-  const dd = String(today.getDate()).padStart(2, "0");
-  fieldDate.value = `${yyyy}-${mm}-${dd}`;
+  fieldDate.value = new Date().toISOString().slice(0, 10);
 
   loadEntries();
 </script>

@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 30 May 2026, 22:30
+**Last updated**: 30 May 2026, 23:00
 
 | Item | State |
 |---|---|
@@ -42,8 +42,9 @@ boundaries.
 | Phase 8 Slice 2 — admin landing page + public-nav admin link | ✅ Done |
 | Chore — pre-closure housekeeping | ✅ Done |
 | Phase D Slice D1 — Online-only diary at `/admin/diary` | ✅ Done |
-| Chore — diary delete button | ✅ Done (deploy pending verification) |
-| Next immediate task | Verify diary delete on live site |
+| Chore — diary delete button | ✅ Done |
+| Phase D Slice D2 — Dateline refinement | ✅ Done (deploy pending verification) |
+| Next immediate task | Verify D2 dateline on live site |
 
 ---
 
@@ -2594,6 +2595,40 @@ until 100+ photos exist across 5+ countries.
 - `footsteps-upload-script` API token — still pending revocation
 - `docs/footsteps_architecture_post_phase_3.svg` — still untracked
 - Node 20 deprecation on action wrappers — bump `@v5` when stable
+
+---
+
+### Session: Phase D Slice D2 — Dateline refinement (30 May 2026, 23:00)
+
+**Context**: UI-only refinement of the paper-diary dateline. No schema change,
+no API change. Columns `entry_date`, `entry_time`, `location_label` already
+exist from migration 0007.
+
+**What was changed** (`src/pages/admin/diary.astro` only)
+
+- **`formatDateline`**: Changed from `"29 May 2026  ·  …"` to
+  `"Friday 29 May · …"`. Weekday derived from `entry_date` via
+  `toLocaleString("en-AU", { weekday: "long" })`. Year dropped from display
+  (stored in `entry_date`, not shown in the dateline). Separator changed from
+  `"  ·  "` (double-spaced) to `" · "` (single-space middle dot U+00B7).
+  Empty-part omission already worked via the `parts` array — no extra logic
+  needed; removing a part removes its separator automatically.
+
+- **`resetForm`**: Now restores today's date (`new Date().toISOString()
+  .slice(0, 10)`) instead of leaving the field blank. Date field is always
+  pre-filled after cancel or a successful save.
+
+- **Init block**: Simplified the date pre-fill from manual `yyyy-mm-dd`
+  string building to `new Date().toISOString().slice(0, 10)`.
+
+**Conventions locked in** (reuse in D3+)
+
+- Dateline format: `"{weekday} {day} {month} · {time} · {location}"`,
+  Playfair Display italic, `text-foreground/45`, hairline beneath.
+- Middle-dot separator: `" · "` (U+00B7 with one space each side).
+- Empty parts omitted without orphaned separators.
+- Time is free text, never coerced.
+- Date field always shows today on a fresh or reset form.
 
 ---
 
