@@ -86,8 +86,11 @@ if (auth instanceof Response) return auth;
         ))}
       </div>
       <p id="list-error" class="hidden text-sm text-red-400"></p>
-      <div id="entries-container" class="hidden space-y-14"></div>
-      <p id="empty-state" class="hidden text-sm text-foreground/30 italic">No entries yet. Write the first one above.</p>
+      <div id="entries-container" class="hidden"></div>
+      <div id="empty-state" class="hidden py-16 text-center">
+        <p class="font-serif text-xl italic text-foreground/20">A fresh page…</p>
+        <p class="mt-2 text-xs text-foreground/15">Write the first entry above.</p>
+      </div>
     </section>
 
   </div>
@@ -175,10 +178,31 @@ if (auth instanceof Response) return auth;
     emptyState.classList.add("hidden");
     container.classList.remove("hidden");
 
+    let currentMonthKey = "";
+    let isFirstGroup = true;
+
     for (const entry of list) {
+      const monthKey = entry.entry_date.slice(0, 7); // "YYYY-MM"
+
+      if (monthKey !== currentMonthKey) {
+        currentMonthKey = monthKey;
+        const [year, month] = monthKey.split("-").map(Number);
+        const label = new Date(year, month - 1, 1)
+          .toLocaleString("en-AU", { month: "long", year: "numeric" });
+
+        const heading = document.createElement("p");
+        heading.className = isFirstGroup
+          ? "font-serif text-xs text-foreground/25 mb-7 tracking-wide"
+          : "font-serif text-xs text-foreground/25 mt-16 mb-7 tracking-wide";
+        heading.textContent = label;
+        container.appendChild(heading);
+        isFirstGroup = false;
+      }
+
       const article = document.createElement("article");
+      article.id = `entry-${entry.id}`;
       article.dataset.id = entry.id;
-      article.className = "group";
+      article.className = "group mb-12";
 
       const dateline = formatDateline(entry);
       const titleHtml = entry.title
@@ -221,6 +245,7 @@ if (auth instanceof Response) return auth;
 
       listLoading.classList.add("hidden");
       renderEntries(entries);
+      scrollToPermalink();
     } catch (err: any) {
       listLoading.classList.add("hidden");
       listError.textContent = err.message;
@@ -396,6 +421,15 @@ if (auth instanceof Response) return auth;
       del.className = "ml-auto text-sm text-red-400/70 hover:text-red-400 transition-colors";
       saveBtn.parentElement!.appendChild(del);
     }
+  }
+
+  // ── Permalink ────────────────────────────────────────────────────
+
+  function scrollToPermalink() {
+    const id = new URLSearchParams(location.search).get("entry");
+    if (!id) return;
+    const el = document.getElementById(`entry-${id}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   // ── Init ────────────────────────────────────────────────────────

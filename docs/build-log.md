@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 30 May 2026, 23:00
+**Last updated**: 30 May 2026, 23:45
 
 | Item | State |
 |---|---|
@@ -43,8 +43,9 @@ boundaries.
 | Chore — pre-closure housekeeping | ✅ Done |
 | Phase D Slice D1 — Online-only diary at `/admin/diary` | ✅ Done |
 | Chore — diary delete button | ✅ Done |
-| Phase D Slice D2 — Dateline refinement | ✅ Done (deploy pending verification) |
-| Next immediate task | Verify D2 dateline on live site |
+| Phase D Slice D2 — Dateline refinement | ✅ Done |
+| Phase D Slice D3 — Reading polish, navigation & centred layout | ✅ Done (deploy pending verification) |
+| Next immediate task | Verify D3 on live site |
 
 ---
 
@@ -2595,6 +2596,52 @@ until 100+ photos exist across 5+ countries.
 - `footsteps-upload-script` API token — still pending revocation
 - `docs/footsteps_architecture_post_phase_3.svg` — still untracked
 - Node 20 deprecation on action wrappers — bump `@v5` when stable
+
+---
+
+### Session: Phase D Slice D3 — Reading polish, navigation & centred layout (30 May 2026, 23:45)
+
+**Context**: UI-only reading polish on the diary page. No schema change, no API
+change. Deliberately low-risk consolidation before the offline slice (D4).
+
+**What was changed** (`src/pages/admin/diary.astro` only)
+
+- **Month grouping** (`renderEntries`): entries are now preceded by a quiet
+  month heading derived from `entry_date` (e.g. "May 2026") in Playfair Display
+  (`font-serif text-xs text-foreground/25 tracking-wide`). Grouping key is
+  `entry_date.slice(0, 7)` ("YYYY-MM") — changes when month changes. First
+  group heading: `mb-7` only. Subsequent groups: `mt-16 mb-7` — the extra top
+  margin acts as the section break between months. Month label uses
+  `new Date(year, month-1, 1).toLocaleString("en-AU", { month: "long",
+  year: "numeric" })`.
+
+- **Per-entry ids** (`renderEntries`): each `<article>` gains
+  `id="entry-{entry.id}"`, enabling `scrollIntoView` targeting.
+
+- **Per-entry spacing**: removed `space-y-14` from the container (spacing was
+  uniform and left no room for month headings to breathe differently). Each
+  article now gets `mb-12` directly.
+
+- **Empty state**: replaced the bare `<p>No entries yet…</p>` with a centred
+  `<div>` containing `"A fresh page…"` in large Playfair Display italic at
+  `text-foreground/20`, with a secondary line at `text-foreground/15`. The
+  write form stays above it.
+
+- **Permalink**: `scrollToPermalink()` checks `?entry={id}` on load; if found,
+  calls `scrollIntoView({ behavior: "smooth", block: "start" })` on the
+  matching article. Called at the end of `loadEntries`'s success path.
+
+- **Paragraph-break rendering**: `bodyToHtml` was already correct (splits on
+  `\n{2+}` into `<p>` elements; single `\n` → `<br>`). CSS `.prose-entry p`
+  rule already spaces paragraphs. No change needed — confirmed consistent.
+
+**Conventions locked in** (reuse in D6+)
+
+- Diary permalink shape: `/admin/diary?entry={id}`, `id="entry-{id}"` per
+  article, `scrollIntoView` on load.
+- Month headings: `font-serif text-xs text-foreground/25 tracking-wide`,
+  derived from `entry_date`, not stored.
+- Entry spacing: `mb-12` per article; `mt-16` before a new-month heading.
 
 ---
 
