@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 28 May 2026, 11:30
+**Last updated**: 30 May 2026, 21:57
 
 | Item | State |
 |---|---|
@@ -41,7 +41,8 @@ boundaries.
 | Phase 8 Slice 1 — /admin/access user management | ✅ Done |
 | Phase 8 Slice 2 — admin landing page + public-nav admin link | ✅ Done |
 | Chore — pre-closure housekeeping | ✅ Done |
-| Next immediate task | None — project closure pending real-world auth test (operational) |
+| Phase D Slice D1 — Online-only diary at `/admin/diary` | ✅ Done (deploy pending verification) |
+| Next immediate task | Verify Phase D Slice D1 on live site (see verification checklist below) |
 
 ---
 
@@ -2592,6 +2593,111 @@ until 100+ photos exist across 5+ countries.
 - `footsteps-upload-script` API token — still pending revocation
 - `docs/footsteps_architecture_post_phase_3.svg` — still untracked
 - Node 20 deprecation on action wrappers — bump `@v5` when stable
+
+---
+
+### Session: Phase D Slice D1 — Online-only diary at /admin/diary (30 May 2026, 21:57)
+
+**Context**: First diary slice. Builds the skeleton of a private, admin-only
+travel diary at `/admin/diary` — write / list / edit / delete backed by a new
+D1 table and Worker API routes, all behind the existing Cloudflare Access
+admin gate. No offline, no GPS, no geocoding. Proves the data model and auth
+gate before the harder slices (offline-first, PWA) land on top.
+
+**What was built**
+
+- **`migrations/0007_create_diary_entries.sql`** — New table `diary_entries`
+  with client-generated UUID primary key (`id`), required `body` and
+  `entry_date`, optional `title` / `entry_time` / `location_label`, reserved
+  nullable columns for future use (`latitude`, `longitude`, `attach_type`,
+  `attach_ref`), and server-set `created_at` / `updated_at` ISO timestamps.
+  Two indexes: `idx_diary_entry_date` (primary sort key) and
+  `idx_diary_attach` (future slice 6). Applied to remote D1 via
+  `wrangler d1 migrations apply --remote`. Local DB had a pre-existing state
+  issue (migrations 0005/0006 applied without tracking entries); fixed by
+  INSERTing the two missing rows into `d1_migrations` before running the
+  apply command.
+
+- **`src/pages/api/admin/diary/index.ts`** — `GET /api/admin/diary` returns
+  all entries newest-first (`ORDER BY entry_date DESC, created_at DESC`).
+  `POST /api/admin/diary` creates an entry; `id` defaults to
+  `crypto.randomUUID()` if not supplied by the client (offline-ready
+  pattern). Both handlers gate via `requireAdmin(request)` matching the
+  existing `api/admin/*` pattern. Parameterised binds throughout.
+
+- **`src/pages/api/admin/diary/[id].ts`** — `GET`, `PUT`, `DELETE` on a
+  single entry. PUT always sets `updated_at` to a fresh server timestamp.
+  DELETE returns 204 with no body. All three handlers auth-gated.
+
+- **`src/pages/admin/diary.astro`** — Paper-diary page. Frontmatter matches
+  the existing admin-page pattern verbatim (`requireAdmin` + `if (auth
+  instanceof Response) return auth`). Tab title `"Diary — Admin — Footsteps"`.
+  Client-side `<script>` handles the full list/write/edit/delete flow via
+  fetch to the API routes. No framework component needed.
+
+- **`src/components/AdminNav.astro`** — Added "Diary" link after "Access".
+
+**Paper-diary design**
+
+- Centred column at `max-w-[42rem]`, generous `py-12` vertical padding.
+- Dateline: three inline inputs (date, time, location) in Playfair Display
+  italic, `text-foreground/50`, with a hairline `h-px bg-white/10` rule
+  beneath — one line of typeset context before the prose.
+- Body textarea uses a `repeating-linear-gradient` background to suggest
+  faint lined paper (rgba white at 4% opacity) without the blue-ruled
+  notebook look.
+- Entry list: stacked `<article>` elements, each with the same dateline
+  format + hairline rule, then body prose at `text-[0.9375rem] leading-[1.75]`
+  (`text-foreground/80`). Multi-paragraph bodies split on double-newline
+  into `<p>` tags. Edit affordance appears on hover (`group-hover:opacity-100`)
+  to keep entries clean at a glance.
+- In edit mode, a "Delete" button appears in the action row. Cancel returns
+  to the blank new-entry state.
+- Today's date pre-filled on page load so the dateline is never blank.
+
+**Migration tracking fix (side effect)**
+
+Remote D1 `d1_migrations` table was missing rows for 0005 and 0006 because
+those migrations were applied by a prior session using a direct SQL approach
+rather than `wrangler d1 migrations apply`. Fixed by inserting the two missing
+rows manually before running the 0007 apply. Local DB has the same gap — the
+local migration apply also errors on 0005 (duplicate column) but the remote
+apply succeeded. Local dev environment discrepancy noted; not blocking.
+
+**Build**: `npm run build` clean, no TypeScript errors. One pre-existing
+chunk-size warning (MapLibre GL) — not related to this slice.
+
+**Verification** (to be run on live site after deploy)
+
+1. Load `footsteps.gallery/admin/diary` in authenticated admin tab → paper-
+   diary page renders; tab title reads "Diary — Admin — Footsteps".
+2. Incognito/logged-out tab: `footsteps.gallery/admin/diary` → Cloudflare
+   Access login redirect, NOT the diary.
+3. Incognito: `fetch('/api/admin/diary')` → expect 401/redirect, never JSON.
+4. Write an entry (dateline + body), save → appears at top of list styled as
+   a diary page.
+5. Reload → entry persists (D1, not just browser state).
+6. Edit body, save → list shows updated text.
+7. Delete a throwaway entry → disappears; reload confirms.
+8. `npx wrangler d1 execute footsteps-db --remote --command "SELECT id,
+   entry_date, substr(body,1,30) FROM diary_entries ORDER BY created_at DESC
+   LIMIT 5;"` → shows the test entries.
+
+**Conventions introduced** (for future diary slices)
+
+- Client-generated UUIDs for `diary_entries.id` — never switch to autoincrement.
+- `updated_at` refreshed server-side on every PUT — will be the last-write-wins
+  key for offline sync (Slice D4).
+- Paper-diary visual treatment (serif dateline + reading measure) is the diary's
+  house style — reuse in later slices.
+
+**Out of scope** (deferred)
+
+- Manual dateline refinement → D2
+- Reading polish / month grouping / permalinks → D3
+- Offline / IndexedDB / sync → D4
+- PWA / service worker → D5
+- Attaching entries to country/city/photo → D6
 
 ---
 

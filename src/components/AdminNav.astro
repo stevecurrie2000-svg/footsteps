@@ -29,5 +29,9 @@ function isActive(href: string) {
       href="/admin/access"
       class:list={["text-sm transition-colors", isActive("/admin/access") ? "text-foreground" : "text-foreground/40 hover:text-foreground/60"]}
     >Access</a>
+    <a
+      href="/admin/diary"
+      class:list={["text-sm transition-colors", isActive("/admin/diary") ? "text-foreground" : "text-foreground/40 hover:text-foreground/60"]}
+    >Diary</a>
   </div>
 </nav>

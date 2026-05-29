@@ -1,0 +1,429 @@
+---
+export const prerender = false;
+
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { requireAdmin } from "../../lib/admin-auth";
+
+const auth = await requireAdmin(Astro.request);
+if (auth instanceof Response) return auth;
+---
+
+<BaseLayout title="Diary — Admin — Footsteps" isAdmin={true}>
+  <div class="mx-auto max-w-[42rem] px-6 py-12">
+
+    <!-- Write / edit form -->
+    <section id="form-section" class="mb-16">
+      <div id="form-dateline" class="mb-4">
+        <div class="flex flex-wrap gap-x-6 gap-y-2 font-serif text-sm text-foreground/50 italic">
+          <input
+            id="field-date"
+            type="date"
+            class="bg-transparent border-none outline-none text-foreground/70 font-serif italic text-sm w-36 cursor-pointer"
+            placeholder="Date"
+          />
+          <input
+            id="field-time"
+            type="text"
+            maxlength="40"
+            class="bg-transparent border-none outline-none text-foreground/50 font-serif italic text-sm w-28 placeholder:text-foreground/30"
+            placeholder="Time (optional)"
+          />
+          <input
+            id="field-location"
+            type="text"
+            maxlength="120"
+            class="bg-transparent border-none outline-none text-foreground/50 font-serif italic text-sm flex-1 min-w-[8rem] placeholder:text-foreground/30"
+            placeholder="Place (optional)"
+          />
+        </div>
+        <div class="mt-3 h-px bg-white/10"></div>
+      </div>
+
+      <input
+        id="field-title"
+        type="text"
+        maxlength="200"
+        class="w-full mb-3 bg-transparent border-none outline-none text-foreground/80 font-serif text-lg placeholder:text-foreground/25"
+        placeholder="Title (optional)"
+      />
+
+      <textarea
+        id="field-body"
+        rows="10"
+        class="w-full bg-transparent border-none outline-none resize-none text-foreground/85 text-base leading-[1.75] placeholder:text-foreground/25"
+        placeholder="Begin writing…"
+      ></textarea>
+
+      <div class="mt-6 flex items-center gap-4">
+        <button
+          id="save-btn"
+          class="rounded bg-white text-background px-5 py-2 text-sm font-medium hover:bg-white/90 transition-colors disabled:opacity-40"
+        >Save entry</button>
+        <button
+          id="cancel-btn"
+          class="hidden text-sm text-foreground/40 hover:text-foreground/70 transition-colors"
+        >Cancel</button>
+        <p id="form-error" class="hidden text-sm text-red-400"></p>
+      </div>
+    </section>
+
+    <!-- Divider -->
+    <div class="mb-14 h-px bg-white/8"></div>
+
+    <!-- Entry list -->
+    <section id="list-section">
+      <div id="list-loading" class="space-y-10">
+        {[1, 2].map(() => (
+          <div class="animate-pulse space-y-3">
+            <div class="h-3 w-48 rounded bg-white/8"></div>
+            <div class="h-px bg-white/8"></div>
+            <div class="space-y-2">
+              <div class="h-3 w-full rounded bg-white/5"></div>
+              <div class="h-3 w-5/6 rounded bg-white/5"></div>
+              <div class="h-3 w-3/4 rounded bg-white/5"></div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p id="list-error" class="hidden text-sm text-red-400"></p>
+      <div id="entries-container" class="hidden space-y-14"></div>
+      <p id="empty-state" class="hidden text-sm text-foreground/30 italic">No entries yet. Write the first one above.</p>
+    </section>
+
+  </div>
+</BaseLayout>
+
+<script>
+  type DiaryEntry = {
+    id: string;
+    title: string | null;
+    body: string;
+    entry_date: string;
+    entry_time: string | null;
+    location_label: string | null;
+    attach_type: string | null;
+    attach_ref: string | null;
+    created_at: string;
+    updated_at: string;
+  };
+
+  let entries: DiaryEntry[] = [];
+  let editingId: string | null = null;
+
+  // ── DOM refs ────────────────────────────────────────────────────
+
+  const fieldDate     = document.getElementById("field-date")     as HTMLInputElement;
+  const fieldTime     = document.getElementById("field-time")     as HTMLInputElement;
+  const fieldLocation = document.getElementById("field-location") as HTMLInputElement;
+  const fieldTitle    = document.getElementById("field-title")    as HTMLInputElement;
+  const fieldBody     = document.getElementById("field-body")     as HTMLTextAreaElement;
+  const saveBtn       = document.getElementById("save-btn")       as HTMLButtonElement;
+  const cancelBtn     = document.getElementById("cancel-btn")     as HTMLButtonElement;
+  const formError     = document.getElementById("form-error")!;
+
+  const listLoading   = document.getElementById("list-loading")!;
+  const listError     = document.getElementById("list-error")!;
+  const container     = document.getElementById("entries-container")!;
+  const emptyState    = document.getElementById("empty-state")!;
+
+  // ── Utilities ────────────────────────────────────────────────────
+
+  function formatDateline(entry: DiaryEntry): string {
+    const parts: string[] = [];
+
+    if (entry.entry_date) {
+      const [year, month, day] = entry.entry_date.split("-").map(Number);
+      const d = new Date(year, month - 1, day);
+      const dayStr = d.getDate();
+      const monthStr = d.toLocaleString("en-AU", { month: "long" });
+      parts.push(`${dayStr} ${monthStr} ${year}`);
+    }
+
+    if (entry.entry_time) parts.push(entry.entry_time);
+    if (entry.location_label) parts.push(entry.location_label);
+
+    return parts.join("  ·  ");
+  }
+
+  function escapeHtml(s: string): string {
+    return s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function bodyToHtml(raw: string): string {
+    return raw
+      .split(/\n{2,}/)
+      .map(para => `<p>${escapeHtml(para.trim()).replace(/\n/g, "<br>")}</p>`)
+      .join("");
+  }
+
+  // ── Render ───────────────────────────────────────────────────────
+
+  function renderEntries(list: DiaryEntry[]) {
+    container.innerHTML = "";
+
+    if (list.length === 0) {
+      container.classList.add("hidden");
+      emptyState.classList.remove("hidden");
+      return;
+    }
+
+    emptyState.classList.add("hidden");
+    container.classList.remove("hidden");
+
+    for (const entry of list) {
+      const article = document.createElement("article");
+      article.dataset.id = entry.id;
+      article.className = "group";
+
+      const dateline = formatDateline(entry);
+      const titleHtml = entry.title
+        ? `<h2 class="mt-1 font-serif text-xl text-foreground/90">${escapeHtml(entry.title)}</h2>`
+        : "";
+
+      article.innerHTML = `
+        <div class="flex items-baseline justify-between gap-4">
+          <p class="font-serif text-sm italic text-foreground/45">${escapeHtml(dateline)}</p>
+          <button
+            class="edit-btn shrink-0 text-xs text-foreground/25 hover:text-foreground/60 transition-colors opacity-0 group-hover:opacity-100"
+            data-id="${escapeHtml(entry.id)}"
+          >edit</button>
+        </div>
+        <div class="mt-2 h-px bg-white/10"></div>
+        ${titleHtml}
+        <div class="mt-4 text-[0.9375rem] leading-[1.75] text-foreground/80 prose-entry">
+          ${bodyToHtml(entry.body)}
+        </div>
+      `;
+
+      container.appendChild(article);
+    }
+  }
+
+  // ── Load ─────────────────────────────────────────────────────────
+
+  async function loadEntries() {
+    try {
+      const res = await fetch("/api/admin/diary");
+      if (!res.ok) throw new Error((await res.json() as any).error ?? `HTTP ${res.status}`);
+      const data = await res.json() as { entries: DiaryEntry[] };
+      entries = data.entries;
+
+      listLoading.classList.add("hidden");
+      renderEntries(entries);
+    } catch (err: any) {
+      listLoading.classList.add("hidden");
+      listError.textContent = err.message;
+      listError.classList.remove("hidden");
+    }
+  }
+
+  // ── Form state ───────────────────────────────────────────────────
+
+  function resetForm() {
+    editingId = null;
+    fieldDate.value = "";
+    fieldTime.value = "";
+    fieldLocation.value = "";
+    fieldTitle.value = "";
+    fieldBody.value = "";
+    saveBtn.textContent = "Save entry";
+    cancelBtn.classList.add("hidden");
+    formError.classList.add("hidden");
+    fieldBody.focus();
+  }
+
+  function populateForm(entry: DiaryEntry) {
+    editingId = entry.id;
+    fieldDate.value = entry.entry_date;
+    fieldTime.value = entry.entry_time ?? "";
+    fieldLocation.value = entry.location_label ?? "";
+    fieldTitle.value = entry.title ?? "";
+    fieldBody.value = entry.body;
+    saveBtn.textContent = "Update entry";
+    cancelBtn.classList.remove("hidden");
+    formError.classList.add("hidden");
+    fieldBody.focus();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // ── Save (create or update) ───────────────────────────────────────
+
+  saveBtn.addEventListener("click", async () => {
+    formError.classList.add("hidden");
+
+    const body = fieldBody.value.trim();
+    const entryDate = fieldDate.value.trim();
+
+    if (!body) {
+      formError.textContent = "Body is required.";
+      formError.classList.remove("hidden");
+      fieldBody.focus();
+      return;
+    }
+    if (!entryDate) {
+      formError.textContent = "Date is required.";
+      formError.classList.remove("hidden");
+      fieldDate.focus();
+      return;
+    }
+
+    const payload = {
+      title: fieldTitle.value.trim() || undefined,
+      body,
+      entry_date: entryDate,
+      entry_time: fieldTime.value.trim() || undefined,
+      location_label: fieldLocation.value.trim() || undefined,
+    };
+
+    saveBtn.disabled = true;
+    try {
+      let res: Response;
+      if (editingId) {
+        res = await fetch(`/api/admin/diary/${encodeURIComponent(editingId)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        res = await fetch("/api/admin/diary", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
+
+      if (!res.ok) {
+        const err = await res.json() as any;
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
+
+      resetForm();
+      await loadEntries();
+    } catch (err: any) {
+      formError.textContent = err.message;
+      formError.classList.remove("hidden");
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+
+  cancelBtn.addEventListener("click", resetForm);
+
+  // ── Edit / delete (event delegation) ─────────────────────────────
+
+  container.addEventListener("click", async (e) => {
+    const editBtn = (e.target as Element).closest(".edit-btn") as HTMLElement | null;
+    const deleteBtn = (e.target as Element).closest(".delete-btn") as HTMLElement | null;
+
+    if (editBtn) {
+      const id = editBtn.dataset.id!;
+      const entry = entries.find(en => en.id === id);
+      if (entry) populateForm(entry);
+      return;
+    }
+
+    if (deleteBtn) {
+      const id = deleteBtn.dataset.id!;
+      if (!confirm("Delete this entry? This cannot be undone.")) return;
+
+      deleteBtn.disabled = true;
+      try {
+        const res = await fetch(`/api/admin/diary/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok && res.status !== 204) {
+          const err = await res.json() as any;
+          throw new Error(err.error ?? `HTTP ${res.status}`);
+        }
+        if (editingId === id) resetForm();
+        await loadEntries();
+      } catch (err: any) {
+        alert(`Delete failed: ${err.message}`);
+        deleteBtn.disabled = false;
+      }
+    }
+  });
+
+  // Show delete button inside edit mode — injected via a second pass on the
+  // article after populateForm sets editingId. Instead, wire delete from the
+  // form area when in edit mode.
+  saveBtn.parentElement!.addEventListener("click", async (e) => {
+    const deleteBtn = (e.target as Element).closest("#inline-delete") as HTMLButtonElement | null;
+    if (!deleteBtn || !editingId) return;
+
+    if (!confirm("Delete this entry? This cannot be undone.")) return;
+
+    deleteBtn.disabled = true;
+    try {
+      const res = await fetch(`/api/admin/diary/${encodeURIComponent(editingId)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok && res.status !== 204) {
+        const err = await res.json() as any;
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
+      resetForm();
+      await loadEntries();
+    } catch (err: any) {
+      alert(`Delete failed: ${err.message}`);
+      deleteBtn.disabled = false;
+    }
+  });
+
+  // Rebuild the action row when editingId changes so "Delete" appears in edit mode
+  function syncFormButtons() {
+    const existingDelete = document.getElementById("inline-delete");
+    if (existingDelete) existingDelete.remove();
+
+    if (editingId) {
+      const del = document.createElement("button");
+      del.id = "inline-delete";
+      del.type = "button";
+      del.textContent = "Delete";
+      del.className = "ml-auto text-sm text-red-400/70 hover:text-red-400 transition-colors";
+      saveBtn.parentElement!.appendChild(del);
+    }
+  }
+
+  // Patch populateForm and resetForm to also sync buttons
+  const _origPopulate = populateForm;
+  const _origReset = resetForm;
+
+  // ── Init ────────────────────────────────────────────────────────
+
+  // Pre-fill today's date
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const dd = String(today.getDate()).padStart(2, "0");
+  fieldDate.value = `${yyyy}-${mm}-${dd}`;
+
+  loadEntries();
+</script>
+
+<style>
+  /* Paper-diary prose paragraphs */
+  .prose-entry p {
+    margin-bottom: 0.875rem;
+  }
+  .prose-entry p:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Hairline rule under body textarea as a subtle lined-paper nod */
+  #field-body {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent,
+      transparent calc(1.75em - 1px),
+      rgba(255,255,255,0.04) calc(1.75em - 1px),
+      rgba(255,255,255,0.04) 1.75em
+    );
+    background-attachment: local;
+    padding-top: 0.1em;
+  }
+</style>
