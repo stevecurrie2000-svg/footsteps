@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 30 May 2026, 20:43
+**Last updated**: 30 May 2026, 20:49
 
 | Item | State |
 |---|---|
@@ -2774,6 +2774,21 @@ page* until D5; verify instead by toggling offline→online without reloading.
 - Live offline testing (DevTools → Network → Offline) not yet run — build-only
   verification so far. Wait 4–6s for hydration before judging.
 - D5: make the page open offline from cache (service worker + PWA install).
+
+---
+
+### Chore — Diary parchment: lighter paper + darker placeholders (30 May 2026, 20:49)
+
+**Context**: Two small readability fixes. Visual-only; typed-text navy and fonts
+unchanged.
+
+- **Parchment base**: `hsl(42,50%,94%)` → `#faf4e8` (paler warm cream; still
+  warm, not white). Flows through to the D6 country-page note via the same
+  token. CSS grain and shadows untouched.
+- **Placeholder colour**: `rgba(26,42,94,0.28)` → `rgba(26,42,94,0.55)`. The
+  prompt text in Title, Date, Time, Location, and "Begin writing…" is now
+  clearly readable on the lighter cream while still being visibly quieter than
+  the full-navy typed text.
 
 ---
 
