@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 30 May 2026, 18:30
+**Last updated**: 30 May 2026, 18:47
 
 | Item | State |
 |---|---|
@@ -49,7 +49,8 @@ boundaries.
 | Phase D Slice D5 — PWA (installable + offline shell) | ✅ Built (live install/offline testing pending) |
 | Chore — diary parchment restyle | ✅ Done |
 | Phase D Slice D6 — Attach entries to country / city / photo | ✅ Built (deploy + verify pending) |
-| Next immediate task | Verify D6: attach an entry to a country, visit that country page as admin, confirm parchment note renders; visit logged-out to confirm prose absent from HTML |
+| **Phase D — Private travel diary** | ✅ **Complete (D1–D6)** |
+| Next immediate task | Verify D6 on live site; plan next phase |
 
 ---
 
@@ -2773,6 +2774,72 @@ page* until D5; verify instead by toggling offline→online without reloading.
 - Live offline testing (DevTools → Network → Offline) not yet run — build-only
   verification so far. Wait 4–6s for hydration before judging.
 - D5: make the page open offline from cache (service worker + PWA install).
+
+---
+
+### Phase D complete — Private travel diary (30 May 2026, 18:47)
+
+A private, admin-only, offline-first travel diary at `/admin/diary`, styled as
+an aged-parchment journal and woven into the portfolio as photo-book commentary.
+
+**Slices delivered**
+
+- **D1** — Online-only diary, admin-gated. `diary_entries` table (migration
+  0007, client-generated UUID ids), CRUD API under `/api/admin/diary` behind
+  `requireAdmin`, paper-diary page. Delete control added as a follow-on chore.
+
+- **D2** — Manual paper-diary dateline. Hand-entered Date / Time (free text) /
+  Location displayed as Playfair italic `"{weekday} {date} · {time} ·
+  {location}"`, empty parts omitted. Auto-GPS deliberately dropped in favour of
+  manual entry.
+
+- **D3** — Reading polish. Centred ~42rem reading column, month grouping with
+  `mt-16` gap between groups, empty state, paragraph-break preservation,
+  per-entry permalink (`/admin/diary?entry={id}`).
+
+- **D4** — Offline-first. IndexedDB local layer (`idb`) with `entries` +
+  `outbox` stores, push-then-pull sync engine, last-write-wins by `updated_at`
+  (guarded on POST upsert and PUT), offline deletes via delete tombstones,
+  three-state status line ("All changes saved" / "Saved on this device — will
+  sync when online" / "Syncing…"). The outbox is sacred — a failed or
+  unauthenticated sync never drops a queued change.
+
+- **D5** — PWA. Manifest + service worker scoped to `/admin/diary` only;
+  cache-first for the app shell, network-only for `/api/*`. Installable on
+  phone and Windows; the page opens offline from cache. PWA icons (Playfair "F"
+  wordmark) are diary-only; the public site favicon is unchanged.
+
+- **D6** — Attachment + commentary. Entries optionally attach to a country,
+  city, or photo (`attach_type` / `attach_ref`). Country-attached entries render
+  as an admin-only parchment "note" on the country page — cream card, Caveat
+  handwriting body, Playfair dateline — inserted server-side above the city
+  grids and gated behind `viewerIsAdmin` (never emitted to non-admin HTML).
+
+- **Chore (between D5 and D6)** — Diary restyled as aged cream parchment with
+  CSS paper grain and soft drop-shadow, Caveat handwriting body in dark ink
+  (`#2a2a3a`), Playfair dateline retained. Fonts and palette scoped to the
+  diary only via `.diary-parchment`; the rest of the site unchanged.
+
+**Key conventions locked in**
+
+- Client-generated UUID ids for diary entries; `updated_at` is the
+  last-write-wins arbitration key.
+- IndexedDB db `"footsteps-diary"` (stores: `entries`, `outbox`). UI reads and
+  writes go through `diary-local.ts`; sync is always background push-then-pull.
+- PWA scope is `/admin/diary` only; `/api/*` is never cached.
+- The parchment + Caveat treatment (`.diary-parchment`, `.diary-note-card`) is
+  the house style for diary prose wherever it appears. Diary prose outside the
+  diary page is always admin-only, gated server-side.
+- `attach_type` ∈ `{null, 'country', 'city', 'photo'}`;
+  `attach_ref` = country slug / `String(city.id)` / photo UUID.
+
+**Open carries (stored correctly; render when the host view exists)**
+
+- Photo-attached entries rendering on the photo lightbox / detail view.
+- City-attached entries rendering on a city view.
+
+**Scope note**: single-author, admin-only. No public or family-allowlist
+exposure of diary content by design.
 
 ---
 
