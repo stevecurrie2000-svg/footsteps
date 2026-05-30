@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 30 May 2026, 23:45
+**Last updated**: 30 May 2026, 10:34
 
 | Item | State |
 |---|---|
@@ -45,7 +45,8 @@ boundaries.
 | Chore — diary delete button | ✅ Done |
 | Phase D Slice D2 — Dateline refinement | ✅ Done |
 | Phase D Slice D3 — Reading polish, navigation & centred layout | ✅ Done (deploy pending verification) |
-| Next immediate task | Verify D3 on live site |
+| Phase D Slice D4 — Offline-first (write offline, sync when online) | ✅ Built (live offline-testing pending) |
+| Next immediate task | Verify D4 offline behaviour (DevTools → Network → Offline) on live site |
 
 ---
 
@@ -2596,6 +2597,101 @@ until 100+ photos exist across 5+ countries.
 - `footsteps-upload-script` API token — still pending revocation
 - `docs/footsteps_architecture_post_phase_3.svg` — still untracked
 - Node 20 deprecation on action wrappers — bump `@v5` when stable
+
+---
+
+### Session: Phase D Slice D4 — Offline-first diary (write offline, sync when online) (30 May 2026, 10:34)
+
+**Context**: The keystone slice. The diary is now writable with no internet —
+writes land in the device's IndexedDB first, queue in an outbox, and push to D1
+when a connection returns. Single-author diary → sync is **last-write-wins**
+with no conflict UI: the server keeps whichever `updated_at` is newer. Built on
+the known-good online diary (D1–D3); those were not touched beyond the API
+extensions below. Landed in **one attempt**; `astro build` clean.
+
+**Architecture principle**: all UI reads come from IndexedDB (instant,
+offline-safe); all UI writes go to IndexedDB **and** enqueue to the outbox. The
+UI no longer calls the API directly — it goes through the local layer, and the
+sync engine reconciles IndexedDB ↔ D1 in the background (push-then-pull).
+
+**Files**
+
+| File | Change |
+|---|---|
+| `src/lib/diary-local.ts` | **New.** IndexedDB layer via `idb`. |
+| `src/lib/diary-sync.ts` | **New.** Background sync engine. |
+| `src/pages/admin/diary.astro` | Client script now reads/writes through `diary-local`; added the sync-status indicator; init wires `diary-sync`. |
+| `src/pages/api/admin/diary/index.ts` | `POST` → UPSERT with last-write-wins guard; `GET` gained `?since=`. |
+| `src/pages/api/admin/diary/[id].ts` | `PUT` gained the last-write-wins guard; `DELETE` unchanged. |
+| `package.json` / lockfile | Added `idb` (Jake Archibald's IndexedDB wrapper). |
+| `docs/build-log.md` | This entry. |
+
+**IndexedDB shape** — one db `"footsteps-diary"` (version 1), two object stores:
+- `entries` — keyed by `id` (`keyPath: "id"`). Full `DiaryEntry` objects; the
+  UI's source of truth. `getAllEntries()` sorts newest-first by `entry_date`,
+  tie-broken by `created_at` — mirrors the server's `ORDER BY`.
+- `outbox` — also keyed by `id` (`keyPath: "id"`). Items are
+  `{ id, op: 'upsert' | 'delete', updated_at }`.
+
+**Outbox / tombstone approach**: every write does an atomic two-store
+transaction — put the entry **and** put an outbox item. Because the outbox is
+keyed by entry `id`, an upsert followed by a delete on the same entry collapse
+to a single pending change (the delete wins the key). `deleteEntry` removes the
+entry locally and leaves a **delete tombstone** in the outbox so a deletion made
+offline still propagates on the next sync. The push drops a stale `upsert` whose
+entry no longer exists locally (a later delete superseded it).
+
+**Sync triggers**: (1) page load if `navigator.onLine`; (2) the window
+`'online'` event; (3) a **debounced (~1s)** call after each local write
+(`scheduleSync`). A re-entrancy guard (`syncing` + `rerunQueued`) coalesces
+overlapping triggers and runs exactly once more if a trigger lands mid-sync.
+
+**Last-write-wins guard (POST + PUT)**:
+- `POST` is now `INSERT … ON CONFLICT(id) DO UPDATE SET … WHERE
+  excluded.updated_at > diary_entries.updated_at`. `created_at` is deliberately
+  **not** in the `DO UPDATE SET`, so it's preserved on conflict. An older
+  incoming write is a silent no-op; the endpoint returns the row **as it now
+  stands** on the server (the newer version), which the client merges.
+- `PUT` mirrors it: `UPDATE … WHERE id = ? AND ? > updated_at` using a
+  client-supplied `updated_at` when present (else stamped `now`). Existence is
+  checked first so a genuine miss still 404s, while an older write no-ops and
+  returns the stored (newer) row.
+- `GET ?since={iso}` → `WHERE updated_at > ? ORDER BY updated_at ASC` powers the
+  PULL; absent `?since=` keeps the full newest-first list the reading UI expects.
+
+**Auth handling (the outbox is sacred)**: all sync calls pass through Cloudflare
+Access; an expired session returns an **HTML redirect, not JSON**. The engine
+treats any **non-JSON / 401 / 3xx** response as "not authenticated right now":
+it throws `NotAuthenticatedError`, leaves the outbox **fully intact**, aborts the
+sync quietly, and retries on the next trigger. A queued change is **never**
+dropped because a sync failed. (DELETE specifically treats 204 **and** 404 as
+success — idempotent — so a tombstone for a never-synced entry still clears.)
+
+**Status indicator** (locked wording, three states, paper-diary voice):
+- outbox empty → `All changes saved`
+- pending / offline → `Saved on this device — will sync when online`
+- push in flight → `Syncing…`
+
+**Watermark**: `lastSync` is stored in `localStorage`
+(`footsteps-diary-last-sync`), advanced to `now` only after a clean push+pull.
+
+**The D5 seam (still pending)**: D4 makes the **data** survive offline; the
+**page shell** still must have been loaded once online. Opening the page from
+cache while offline is **Slice D5** (service worker / PWA). Verification step 3
+(reload-while-offline) marks exactly this seam — expected to fail to *load the
+page* until D5; verify instead by toggling offline→online without reloading.
+
+**Conventions locked in** (reuse in D5/D6+)
+- IndexedDB db `"footsteps-diary"`, stores `entries` + `outbox`.
+- UI reads/writes go through `diary-local.ts`; sync is background,
+  push-then-pull, reconciled by `updated_at`, last-write-wins.
+- A failed sync never drops a queued change — the outbox is sacred.
+- Deletes propagate via outbox tombstones.
+
+**Carries — still open**
+- Live offline testing (DevTools → Network → Offline) not yet run — build-only
+  verification so far. Wait 4–6s for hydration before judging.
+- D5: make the page open offline from cache (service worker + PWA install).
 
 ---
 

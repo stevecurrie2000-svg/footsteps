@@ -65,6 +65,9 @@ if (auth instanceof Response) return auth;
         >Cancel</button>
         <p id="form-error" class="hidden text-sm text-red-400"></p>
       </div>
+
+      <!-- Sync status — quiet, paper-diary voice -->
+      <p id="sync-status" class="mt-4 font-serif text-xs italic text-foreground/30"></p>
     </section>
 
     <!-- Divider -->
@@ -97,18 +100,22 @@ if (auth instanceof Response) return auth;
 </BaseLayout>
 
 <script>
-  type DiaryEntry = {
-    id: string;
-    title: string | null;
-    body: string;
-    entry_date: string;
-    entry_time: string | null;
-    location_label: string | null;
-    attach_type: string | null;
-    attach_ref: string | null;
-    created_at: string;
-    updated_at: string;
-  };
+  // Offline-first (Slice D4): all reads and writes go through the local
+  // IndexedDB layer; the API is reached only by the background sync engine.
+  import {
+    getAllEntries,
+    saveEntry,
+    deleteEntry,
+    type DiaryEntry,
+  } from "../../lib/diary-local";
+  import {
+    initSync,
+    scheduleSync,
+    refreshStatus,
+    onSyncStatus,
+    onEntriesChanged,
+    type SyncStatus,
+  } from "../../lib/diary-sync";
 
   let entries: DiaryEntry[] = [];
   let editingId: string | null = null;
@@ -123,6 +130,7 @@ if (auth instanceof Response) return auth;
   const saveBtn       = document.getElementById("save-btn")       as HTMLButtonElement;
   const cancelBtn     = document.getElementById("cancel-btn")     as HTMLButtonElement;
   const formError     = document.getElementById("form-error")!;
+  const syncStatus    = document.getElementById("sync-status")!;
 
   const listLoading   = document.getElementById("list-loading")!;
   const listError     = document.getElementById("list-error")!;
@@ -234,15 +242,11 @@ if (auth instanceof Response) return auth;
     }
   }
 
-  // ── Load ─────────────────────────────────────────────────────────
+  // ── Load (always from the local store — instant, offline-safe) ────
 
   async function loadEntries() {
     try {
-      const res = await fetch("/api/admin/diary");
-      if (!res.ok) throw new Error((await res.json() as any).error ?? `HTTP ${res.status}`);
-      const data = await res.json() as { entries: DiaryEntry[] };
-      entries = data.entries;
-
+      entries = await getAllEntries();
       listLoading.classList.add("hidden");
       renderEntries(entries);
       scrollToPermalink();
@@ -305,38 +309,22 @@ if (auth instanceof Response) return auth;
       return;
     }
 
-    const payload = {
-      title: fieldTitle.value.trim() || undefined,
-      body,
-      entry_date: entryDate,
-      entry_time: fieldTime.value.trim() || undefined,
-      location_label: fieldLocation.value.trim() || undefined,
-    };
-
     saveBtn.disabled = true;
     try {
-      let res: Response;
-      if (editingId) {
-        res = await fetch(`/api/admin/diary/${encodeURIComponent(editingId)}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-      } else {
-        res = await fetch("/api/admin/diary", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-      }
-
-      if (!res.ok) {
-        const err = await res.json() as any;
-        throw new Error(err.error ?? `HTTP ${res.status}`);
-      }
+      // Write to IndexedDB + outbox; sync pushes to D1 in the background.
+      await saveEntry({
+        id: editingId,
+        title: fieldTitle.value.trim() || null,
+        body,
+        entry_date: entryDate,
+        entry_time: fieldTime.value.trim() || null,
+        location_label: fieldLocation.value.trim() || null,
+      });
 
       resetForm();
       await loadEntries();
+      await refreshStatus();
+      scheduleSync();
     } catch (err: any) {
       formError.textContent = err.message;
       formError.classList.remove("hidden");
@@ -366,15 +354,12 @@ if (auth instanceof Response) return auth;
 
       deleteBtn.disabled = true;
       try {
-        const res = await fetch(`/api/admin/diary/${encodeURIComponent(id)}`, {
-          method: "DELETE",
-        });
-        if (!res.ok && res.status !== 204) {
-          const err = await res.json() as any;
-          throw new Error(err.error ?? `HTTP ${res.status}`);
-        }
+        // Remove locally + queue a delete tombstone; sync propagates it.
+        await deleteEntry(id);
         if (editingId === id) resetForm();
         await loadEntries();
+        await refreshStatus();
+        scheduleSync();
       } catch (err: any) {
         alert(`Delete failed: ${err.message}`);
         deleteBtn.disabled = false;
@@ -393,15 +378,11 @@ if (auth instanceof Response) return auth;
 
     deleteBtn.disabled = true;
     try {
-      const res = await fetch(`/api/admin/diary/${encodeURIComponent(editingId)}`, {
-        method: "DELETE",
-      });
-      if (!res.ok && res.status !== 204) {
-        const err = await res.json() as any;
-        throw new Error(err.error ?? `HTTP ${res.status}`);
-      }
+      await deleteEntry(editingId);
       resetForm();
       await loadEntries();
+      await refreshStatus();
+      scheduleSync();
     } catch (err: any) {
       alert(`Delete failed: ${err.message}`);
       deleteBtn.disabled = false;
@@ -432,11 +413,28 @@ if (auth instanceof Response) return auth;
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  // ── Sync status indicator (locked wording, three states) ─────────
+
+  function renderSyncStatus(status: SyncStatus) {
+    syncStatus.textContent =
+      status === "syncing" ? "Syncing…"
+      : status === "pending" ? "Saved on this device — will sync when online"
+      : "All changes saved";
+  }
+
+  onSyncStatus(renderSyncStatus);
+
+  // Re-render the list when the background pull merges newer server rows in
+  // (e.g. first load on a fresh device, or after coming back online).
+  onEntriesChanged(() => { void loadEntries(); });
+
   // ── Init ────────────────────────────────────────────────────────
 
   fieldDate.value = new Date().toISOString().slice(0, 10);
 
   loadEntries();
+  initSync();   // initial push+pull if online; wires the 'online' event
+  refreshStatus();
 </script>
 
 <style>

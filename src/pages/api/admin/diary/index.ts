@@ -11,23 +11,37 @@ type DiaryEntry = {
   entry_date: string;
   entry_time: string | null;
   location_label: string | null;
+  latitude: number | null;
+  longitude: number | null;
   attach_type: string | null;
   attach_ref: string | null;
   created_at: string;
   updated_at: string;
 };
 
+const COLUMNS =
+  `id, title, body, entry_date, entry_time, location_label,
+   latitude, longitude, attach_type, attach_ref, created_at, updated_at`;
+
 export const GET: APIRoute = async ({ request }) => {
   const auth = await requireAdmin(request);
   if (auth instanceof Response) return auth;
 
+  // ?since={iso} powers the offline sync PULL: return only rows changed after
+  // the watermark, oldest-first. Absent ?since= keeps the full list behaviour
+  // the reading UI expects (newest-first).
+  const since = new URL(request.url).searchParams.get("since");
+
   try {
-    const result = await env.DB.prepare(
-      `SELECT id, title, body, entry_date, entry_time, location_label,
-              attach_type, attach_ref, created_at, updated_at
-       FROM diary_entries
-       ORDER BY entry_date DESC, created_at DESC`
-    ).all<DiaryEntry>();
+    const result = since
+      ? await env.DB.prepare(
+          `SELECT ${COLUMNS} FROM diary_entries
+           WHERE updated_at > ? ORDER BY updated_at ASC`
+        ).bind(since).all<DiaryEntry>()
+      : await env.DB.prepare(
+          `SELECT ${COLUMNS} FROM diary_entries
+           ORDER BY entry_date DESC, created_at DESC`
+        ).all<DiaryEntry>();
 
     return new Response(JSON.stringify({ entries: result.results ?? [] }), {
       headers: { "Content-Type": "application/json" },
@@ -44,16 +58,13 @@ export const POST: APIRoute = async ({ request }) => {
   const auth = await requireAdmin(request);
   if (auth instanceof Response) return auth;
 
-  let body: {
-    id?: string;
-    title?: string;
-    body?: string;
-    entry_date?: string;
-    entry_time?: string;
-    location_label?: string;
-  };
+  // POST is an UPSERT keyed on id (the offline sync PUSH path). It accepts a
+  // full entry — including client-minted id and timestamps — and reconciles by
+  // last-write-wins: an incoming write whose updated_at is older than the
+  // stored row is a silent no-op (see the guard in the ON CONFLICT clause).
+  let body: Partial<DiaryEntry>;
   try {
-    body = await request.json() as typeof body;
+    body = await request.json() as Partial<DiaryEntry>;
   } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON" }), {
       status: 400,
@@ -74,36 +85,48 @@ export const POST: APIRoute = async ({ request }) => {
     });
   }
 
+  const now = new Date().toISOString();
   const id = (body.id ?? "").trim() || crypto.randomUUID();
   const title = (body.title ?? "").trim() || null;
   const entryBody = body.body.trim();
   const entryDate = body.entry_date.trim();
   const entryTime = (body.entry_time ?? "").trim() || null;
   const locationLabel = (body.location_label ?? "").trim() || null;
-  const now = new Date().toISOString();
+  const latitude = typeof body.latitude === "number" ? body.latitude : null;
+  const longitude = typeof body.longitude === "number" ? body.longitude : null;
+  const attachType = (body.attach_type ?? "").trim() || null;
+  const attachRef = (body.attach_ref ?? "").trim() || null;
+  // created_at is preserved on conflict (it is NOT in the DO UPDATE SET); only
+  // used here for a first insert. updated_at drives last-write-wins.
+  const createdAt = (body.created_at ?? "").trim() || now;
+  const updatedAt = (body.updated_at ?? "").trim() || now;
 
   try {
     await env.DB.prepare(
       `INSERT INTO diary_entries
-         (id, title, body, entry_date, entry_time, location_label, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(id, title, entryBody, entryDate, entryTime, locationLabel, now, now).run();
+         (id, title, body, entry_date, entry_time, location_label,
+          latitude, longitude, attach_type, attach_ref, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         title=excluded.title, body=excluded.body, entry_date=excluded.entry_date,
+         entry_time=excluded.entry_time, location_label=excluded.location_label,
+         latitude=excluded.latitude, longitude=excluded.longitude,
+         attach_type=excluded.attach_type, attach_ref=excluded.attach_ref,
+         updated_at=excluded.updated_at
+       WHERE excluded.updated_at > diary_entries.updated_at`
+    ).bind(
+      id, title, entryBody, entryDate, entryTime, locationLabel,
+      latitude, longitude, attachType, attachRef, createdAt, updatedAt
+    ).run();
 
-    const entry: DiaryEntry = {
-      id,
-      title,
-      body: entryBody,
-      entry_date: entryDate,
-      entry_time: entryTime,
-      location_label: locationLabel,
-      attach_type: null,
-      attach_ref: null,
-      created_at: now,
-      updated_at: now,
-    };
+    // Return the row as it now stands on the server. If the guard no-op'd an
+    // older write, this is the newer stored version (correct for the client).
+    const stored = await env.DB.prepare(
+      `SELECT ${COLUMNS} FROM diary_entries WHERE id = ?`
+    ).bind(id).first<DiaryEntry>();
 
-    return new Response(JSON.stringify(entry), {
-      status: 201,
+    return new Response(JSON.stringify(stored), {
+      status: 200,
       headers: { "Content-Type": "application/json" },
     });
   } catch (err: any) {
