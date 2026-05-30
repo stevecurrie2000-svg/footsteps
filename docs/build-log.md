@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 30 May 2026, 20:58
+**Last updated**: 30 May 2026, 21:11
 
 | Item | State |
 |---|---|
@@ -2774,6 +2774,33 @@ page* until D5; verify instead by toggling offline→online without reloading.
 - Live offline testing (DevTools → Network → Offline) not yet run — build-only
   verification so far. Wait 4–6s for hydration before judging.
 - D5: make the page open offline from cache (service worker + PWA install).
+
+---
+
+### Bug fix — Country-page diary note not rendering for admin (30 May 2026, 21:11)
+
+**Root cause**: `validateAccessJwt` (in `src/lib/access-jwt.ts`) looked only at
+the `Cf-Access-Jwt-Assertion` request **header**. Cloudflare Access injects that
+header only on routes protected by an Access application. The country page is
+public — Access never touches the request, the header is absent, `getAdminEmail`
+returned `null`, `viewerIsAdmin` stayed `false`, and the diary note block never
+executed. The diary entry and D1 data were correct throughout.
+
+**Fix** (`src/lib/access-jwt.ts` only): fall back to the `CF_Authorization`
+**cookie** when the header is absent. Cloudflare Access sets this cookie on the
+browser for all routes on the domain after authentication, carrying the identical
+JWT. `getCookieByName` extracts it; the existing `jwtVerify` call is unchanged.
+For admin users visiting a public page, the cookie is present and valid →
+`viewerIsAdmin` becomes `true` → diary notes render. For unauthenticated visitors
+the cookie is absent → `null` returned → no change.
+
+The fix is a 2-line change to the token-extraction line plus an 8-line cookie
+helper. All other validation (signature, issuer, audience, email claim, expiry)
+is identical. The dev bypass fires before either check and is unaffected.
+
+**Scope**: affects every caller of `validateAccessJwt` (admin-auth, private-auth,
+photo proxy) — they all benefit: admin/private detection now works on any route
+on the domain where the browser carries the Access cookie.
 
 ---
 

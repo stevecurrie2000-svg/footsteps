@@ -17,6 +17,11 @@ import {
 } from "./access-config";
 
 const JWT_HEADER = "Cf-Access-Jwt-Assertion";
+// Cloudflare Access also sets this cookie on the browser for ALL routes on the
+// domain (not just Access-protected ones). Reading it lets us detect the admin
+// session on public pages (e.g. country pages) where Access never injects the
+// header. The cookie value is identical in format to the header JWT.
+const JWT_COOKIE = "CF_Authorization";
 const EMAIL_HEADER = "Cf-Access-Authenticated-User-Email";
 
 interface ValidationContext {
@@ -47,7 +52,7 @@ export async function validateAccessJwt(
     return email && email.length > 0 ? email.toLowerCase() : null;
   }
 
-  const token = request.headers.get(JWT_HEADER);
+  const token = request.headers.get(JWT_HEADER) ?? getCookieByName(request, JWT_COOKIE);
   if (!token) {
     logFailure(request, "missing_jwt", null);
     return null;
@@ -77,6 +82,16 @@ export async function validateAccessJwt(
   }
 
   return email.toLowerCase();
+}
+
+function getCookieByName(request: Request, name: string): string | null {
+  const header = request.headers.get("cookie") ?? "";
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq < 0) continue;
+    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+  }
+  return null;
 }
 
 function logFailure(
