@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 30 May 2026, 18:47
+**Last updated**: 30 May 2026, 20:43
 
 | Item | State |
 |---|---|
@@ -2774,6 +2774,26 @@ page* until D5; verify instead by toggling offline→online without reloading.
 - Live offline testing (DevTools → Network → Offline) not yet run — build-only
   verification so far. Wait 4–6s for hydration before judging.
 - D5: make the page open offline from cache (service worker + PWA install).
+
+---
+
+### Chore — Diary parchment: lighter paper + royal navy ink (30 May 2026, 20:43)
+
+**Context**: Readability fix — the previous sepia/brown ink (`#2a2a3a`) sat too
+close in value to the cream parchment (`hsl(40,46%,90%)`), making handwriting
+hard to read. Visual-only; no data/API/offline/PWA changes.
+
+**What changed** (`src/pages/admin/diary.astro` + `src/pages/countries/[slug].astro`)
+
+- **Parchment base**: `hsl(40, 46%, 90%)` → `hsl(42, 50%, 94%)` (~#f7efe0,
+  a paler warm cream). CSS grain layers and drop-shadow untouched.
+- **Ink colour**: `#2a2a3a` → `#1a2a5e` (royal navy). All opacity variants
+  `rgba(42,42,58,X)` → `rgba(26,42,94,X)` — covers body text, dateline,
+  month headings, dividers, skeleton, placeholders, action buttons, and the
+  SVG caret in the attach-select (which was URL-encoded and required a
+  separate fix). Button background and hover also updated.
+- Both files updated together; the D6 country-page parchment note picks up
+  the new palette automatically via the same token set.
 
 ---
 
