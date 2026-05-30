@@ -21,15 +21,6 @@ const { results: allCities } = await env.DB
   )
   .all<{ id: number; name: string; country_name: string }>();
 
-const { results: recentPhotos } = await env.DB
-  .prepare(
-    `SELECT p.id, p.caption, ci.name AS city_name, co.name AS country_name
-     FROM photos p
-     JOIN cities ci ON ci.id = p.city_id
-     JOIN countries co ON co.id = p.country_id
-     ORDER BY p.created_at DESC LIMIT 24`
-  )
-  .all<{ id: string; caption: string | null; city_name: string; country_name: string }>();
 ---
 
 <BaseLayout title="Diary — Admin — Footsteps" isAdmin={true}>
@@ -92,7 +83,7 @@ const { results: recentPhotos } = await env.DB
           placeholder="Begin writing…"
         ></textarea>
 
-        <!-- Attach to country / city / photo (optional) -->
+        <!-- Attach to country / city (optional) -->
         <div id="attach-section" class="mt-5 pt-4">
           <div class="flex flex-wrap items-baseline gap-x-4 gap-y-2">
             <span class="font-serif italic text-xs text-foreground/35 shrink-0">Attach to</span>
@@ -100,7 +91,6 @@ const { results: recentPhotos } = await env.DB
               <option value="">— none —</option>
               <option value="country">Country</option>
               <option value="city">City</option>
-              <option value="photo">Photo</option>
             </select>
             <select id="field-attach-country" class="attach-select hidden">
               <option value="">choose…</option>
@@ -112,14 +102,6 @@ const { results: recentPhotos } = await env.DB
               <option value="">choose…</option>
               {(allCities ?? []).map(c => (
                 <option value={String(c.id)}>{c.name} · {c.country_name}</option>
-              ))}
-            </select>
-            <select id="field-attach-photo" class="attach-select hidden">
-              <option value="">choose…</option>
-              {(recentPhotos ?? []).map(p => (
-                <option value={p.id}>
-                  {p.city_name}, {p.country_name}{p.caption ? ` — ${p.caption}` : ""}
-                </option>
               ))}
             </select>
           </div>
@@ -202,7 +184,6 @@ const { results: recentPhotos } = await env.DB
   const fieldAttachType  = document.getElementById("field-attach-type")  as HTMLSelectElement;
   const fieldAttachCountry = document.getElementById("field-attach-country") as HTMLSelectElement;
   const fieldAttachCity    = document.getElementById("field-attach-city")    as HTMLSelectElement;
-  const fieldAttachPhoto   = document.getElementById("field-attach-photo")   as HTMLSelectElement;
   const saveBtn          = document.getElementById("save-btn")           as HTMLButtonElement;
   const cancelBtn        = document.getElementById("cancel-btn")         as HTMLButtonElement;
   const formError        = document.getElementById("form-error")!;
@@ -232,7 +213,6 @@ const { results: recentPhotos } = await env.DB
     const t = fieldAttachType.value;
     if (t === "country") return fieldAttachCountry.value || null;
     if (t === "city")    return fieldAttachCity.value    || null;
-    if (t === "photo")   return fieldAttachPhoto.value   || null;
     return null;
   }
 
@@ -243,7 +223,6 @@ const { results: recentPhotos } = await env.DB
     if (entry.attach_type === "city") {
       return "↳ " + (cityNameById.get(entry.attach_ref ?? "") ?? `city ${entry.attach_ref}`);
     }
-    if (entry.attach_type === "photo") return "↳ photo";
     return "";
   }
 
@@ -251,13 +230,11 @@ const { results: recentPhotos } = await env.DB
     const t = fieldAttachType.value;
     fieldAttachCountry.classList.toggle("hidden", t !== "country");
     fieldAttachCity.classList.toggle("hidden",    t !== "city");
-    fieldAttachPhoto.classList.toggle("hidden",   t !== "photo");
   }
 
   fieldAttachType.addEventListener("change", () => {
     fieldAttachCountry.value = "";
     fieldAttachCity.value    = "";
-    fieldAttachPhoto.value   = "";
     syncAttachPickers();
   });
 
@@ -334,7 +311,7 @@ const { results: recentPhotos } = await env.DB
       const article = document.createElement("article");
       article.id = `entry-${entry.id}`;
       article.dataset.id = entry.id;
-      article.className = "group mb-12";
+      article.className = "mb-12";
 
       const dateline = formatDateline(entry);
       const attachLabel = formatAttachLabel(entry);
@@ -351,13 +328,13 @@ const { results: recentPhotos } = await env.DB
             <p class="font-serif text-sm italic text-foreground/45">${escapeHtml(dateline)}</p>
             ${attachHtml}
           </div>
-          <span class="flex shrink-0 gap-3 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <span class="flex shrink-0 gap-2 mt-0.5">
             <button
-              class="edit-btn text-xs text-foreground/25 hover:text-foreground/60 transition-colors"
+              class="edit-btn text-xs text-foreground/45 hover:text-foreground/70 transition-colors"
               data-id="${escapeHtml(entry.id)}"
             >edit</button>
             <button
-              class="delete-btn text-xs text-foreground/25 hover:text-red-400/70 transition-colors"
+              class="delete-btn text-xs text-foreground/35 hover:text-red-400/70 transition-colors"
               data-id="${escapeHtml(entry.id)}"
             >delete</button>
           </span>
@@ -400,7 +377,6 @@ const { results: recentPhotos } = await env.DB
     fieldAttachType.value    = "";
     fieldAttachCountry.value = "";
     fieldAttachCity.value    = "";
-    fieldAttachPhoto.value   = "";
     syncAttachPickers();
     saveBtn.textContent = "Save entry";
     cancelBtn.classList.add("hidden");
@@ -420,7 +396,6 @@ const { results: recentPhotos } = await env.DB
     fieldAttachType.value    = at;
     fieldAttachCountry.value = at === "country" ? (entry.attach_ref ?? "") : "";
     fieldAttachCity.value    = at === "city"    ? (entry.attach_ref ?? "") : "";
-    fieldAttachPhoto.value   = at === "photo"   ? (entry.attach_ref ?? "") : "";
     syncAttachPickers();
     saveBtn.textContent = "Update entry";
     cancelBtn.classList.remove("hidden");
@@ -786,12 +761,14 @@ const { results: recentPhotos } = await env.DB
     color: rgba(26,42,94,0.90);
   }
 
-  /* ── Edit / delete action buttons ───────────────────────────────── */
+  /* ── Edit / delete action buttons — always visible, generous tap target ── */
   .diary-parchment .edit-btn,
   .diary-parchment .delete-btn {
     font-family: 'Playfair Display', Georgia, serif;
     font-size: 0.68rem;
     font-style: italic;
+    padding: 0.3rem 0.5rem;
+    margin: -0.3rem -0.25rem;
   }
 
   /* ── Inline delete in edit mode (injected dynamically by JS) ──────── */

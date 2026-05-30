@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 30 May 2026, 20:49
+**Last updated**: 30 May 2026, 20:58
 
 | Item | State |
 |---|---|
@@ -2774,6 +2774,25 @@ page* until D5; verify instead by toggling offline→online without reloading.
 - Live offline testing (DevTools → Network → Offline) not yet run — build-only
   verification so far. Wait 4–6s for hydration before judging.
 - D5: make the page open offline from cache (service worker + PWA install).
+
+---
+
+### Chore — Remove photo attachment + always-visible Edit/Delete (30 May 2026, 20:58)
+
+**Context**: Two diary UI changes. Visual/UI only — no migration, data, offline,
+or PWA changes. `attach_type`/`attach_ref` columns and the API are untouched.
+
+- **Photo attachment removed from UI**: "Photo" option dropped from the
+  "Attach to…" select; photo picker `<select>` and its D1 query removed from
+  the form. Country and City attachment unchanged. `attach_type='photo'` can
+  still exist in D1 (no migration); the form simply no longer writes it. The
+  D6 photo-render carry is now dropped (not deferred).
+- **Edit/Delete always visible**: Removed `group`, `opacity-0`,
+  `group-hover:opacity-100`, and `transition-opacity` from the entry action
+  row — controls are now always shown. Base opacity raised to `/45` (edit) and
+  `/35` (delete) so they read as quiet parchment controls. Added
+  `padding: 0.3rem 0.5rem` + negative margin to give each button a generous
+  tap target without disrupting layout.
 
 ---
 
