@@ -3,23 +3,9 @@ export const prerender = false;
 
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { requireAdmin } from "../../lib/admin-auth";
-import { env } from "cloudflare:workers";
 
 const auth = await requireAdmin(Astro.request);
 if (auth instanceof Response) return auth;
-
-// Picker data for the "Attach to…" control — fetched at request time (SSR).
-const { results: countries } = await env.DB
-  .prepare("SELECT slug, name FROM countries ORDER BY name")
-  .all<{ slug: string; name: string }>();
-
-const { results: allCities } = await env.DB
-  .prepare(
-    `SELECT c.id, c.name, co.name AS country_name
-     FROM cities c JOIN countries co ON co.id = c.country_id
-     ORDER BY co.name, c.name`
-  )
-  .all<{ id: number; name: string; country_name: string }>();
 
 ---
 
@@ -82,30 +68,6 @@ const { results: allCities } = await env.DB
           class="w-full bg-transparent border-none outline-none resize-none text-foreground/85 text-base leading-[1.75] placeholder:text-foreground/25"
           placeholder="Begin writing…"
         ></textarea>
-
-        <!-- Attach to country / city (optional) -->
-        <div id="attach-section" class="mt-5 pt-4">
-          <div class="flex flex-wrap items-baseline gap-x-4 gap-y-2">
-            <span class="font-serif italic text-xs text-foreground/35 shrink-0">Attach to</span>
-            <select id="field-attach-type" class="attach-select">
-              <option value="">— none —</option>
-              <option value="country">Country</option>
-              <option value="city">City</option>
-            </select>
-            <select id="field-attach-country" class="attach-select hidden">
-              <option value="">choose…</option>
-              {(countries ?? []).map(c => (
-                <option value={c.slug}>{c.name}</option>
-              ))}
-            </select>
-            <select id="field-attach-city" class="attach-select hidden">
-              <option value="">choose…</option>
-              {(allCities ?? []).map(c => (
-                <option value={String(c.id)}>{c.name} · {c.country_name}</option>
-              ))}
-            </select>
-          </div>
-        </div>
 
         <div class="mt-6 flex items-center gap-4">
           <button
@@ -181,9 +143,6 @@ const { results: allCities } = await env.DB
   const fieldLocation    = document.getElementById("field-location")     as HTMLInputElement;
   const fieldTitle       = document.getElementById("field-title")        as HTMLInputElement;
   const fieldBody        = document.getElementById("field-body")         as HTMLTextAreaElement;
-  const fieldAttachType  = document.getElementById("field-attach-type")  as HTMLSelectElement;
-  const fieldAttachCountry = document.getElementById("field-attach-country") as HTMLSelectElement;
-  const fieldAttachCity    = document.getElementById("field-attach-city")    as HTMLSelectElement;
   const saveBtn          = document.getElementById("save-btn")           as HTMLButtonElement;
   const cancelBtn        = document.getElementById("cancel-btn")         as HTMLButtonElement;
   const formError        = document.getElementById("form-error")!;
@@ -193,50 +152,6 @@ const { results: allCities } = await env.DB
   const listError        = document.getElementById("list-error")!;
   const container        = document.getElementById("entries-container")!;
   const emptyState       = document.getElementById("empty-state")!;
-
-  // ── Attach control helpers ────────────────────────────────────────
-
-  // Build name-lookup maps from server-rendered options so the entry list can
-  // show human-readable labels (e.g. "Scotland" instead of "scotland").
-  const countryNameBySlug = new Map<string, string>(
-    Array.from(fieldAttachCountry.options)
-      .filter(o => o.value)
-      .map(o => [o.value, o.text])
-  );
-  const cityNameById = new Map<string, string>(
-    Array.from(fieldAttachCity.options)
-      .filter(o => o.value)
-      .map(o => [o.value, o.text])
-  );
-
-  function getAttachRef(): string | null {
-    const t = fieldAttachType.value;
-    if (t === "country") return fieldAttachCountry.value || null;
-    if (t === "city")    return fieldAttachCity.value    || null;
-    return null;
-  }
-
-  function formatAttachLabel(entry: DiaryEntry): string {
-    if (entry.attach_type === "country") {
-      return "↳ " + (countryNameBySlug.get(entry.attach_ref ?? "") ?? entry.attach_ref ?? "");
-    }
-    if (entry.attach_type === "city") {
-      return "↳ " + (cityNameById.get(entry.attach_ref ?? "") ?? `city ${entry.attach_ref}`);
-    }
-    return "";
-  }
-
-  function syncAttachPickers() {
-    const t = fieldAttachType.value;
-    fieldAttachCountry.classList.toggle("hidden", t !== "country");
-    fieldAttachCity.classList.toggle("hidden",    t !== "city");
-  }
-
-  fieldAttachType.addEventListener("change", () => {
-    fieldAttachCountry.value = "";
-    fieldAttachCity.value    = "";
-    syncAttachPickers();
-  });
 
   // ── Utilities ────────────────────────────────────────────────────
 
@@ -314,20 +229,13 @@ const { results: allCities } = await env.DB
       article.className = "mb-12";
 
       const dateline = formatDateline(entry);
-      const attachLabel = formatAttachLabel(entry);
-      const attachHtml = attachLabel
-        ? `<p class="mt-0.5 font-serif text-xs italic text-foreground/30">${escapeHtml(attachLabel)}</p>`
-        : "";
       const titleHtml = entry.title
         ? `<h2 class="mt-1 font-serif text-xl text-foreground/90">${escapeHtml(entry.title)}</h2>`
         : "";
 
       article.innerHTML = `
         <div class="flex items-start justify-between gap-4">
-          <div>
-            <p class="font-serif text-sm italic text-foreground/45">${escapeHtml(dateline)}</p>
-            ${attachHtml}
-          </div>
+          <p class="font-serif text-sm italic text-foreground/45">${escapeHtml(dateline)}</p>
           <span class="flex shrink-0 gap-2 mt-0.5">
             <button
               class="edit-btn text-xs text-foreground/45 hover:text-foreground/70 transition-colors"
@@ -374,10 +282,6 @@ const { results: allCities } = await env.DB
     fieldLocation.value = "";
     fieldTitle.value = "";
     fieldBody.value = "";
-    fieldAttachType.value    = "";
-    fieldAttachCountry.value = "";
-    fieldAttachCity.value    = "";
-    syncAttachPickers();
     saveBtn.textContent = "Save entry";
     cancelBtn.classList.add("hidden");
     formError.classList.add("hidden");
@@ -392,11 +296,6 @@ const { results: allCities } = await env.DB
     fieldLocation.value = entry.location_label ?? "";
     fieldTitle.value = entry.title ?? "";
     fieldBody.value = entry.body;
-    const at = entry.attach_type ?? "";
-    fieldAttachType.value    = at;
-    fieldAttachCountry.value = at === "country" ? (entry.attach_ref ?? "") : "";
-    fieldAttachCity.value    = at === "city"    ? (entry.attach_ref ?? "") : "";
-    syncAttachPickers();
     saveBtn.textContent = "Update entry";
     cancelBtn.classList.remove("hidden");
     formError.classList.add("hidden");
@@ -426,10 +325,6 @@ const { results: allCities } = await env.DB
       return;
     }
 
-    // Only store an attachment if both type and ref are set.
-    const at = fieldAttachType.value || null;
-    const ar = getAttachRef();
-
     saveBtn.disabled = true;
     try {
       // Write to IndexedDB + outbox; sync pushes to D1 in the background.
@@ -440,8 +335,6 @@ const { results: allCities } = await env.DB
         entry_date: entryDate,
         entry_time: fieldTime.value.trim() || null,
         location_label: fieldLocation.value.trim() || null,
-        attach_type: (at && ar) ? at : null,
-        attach_ref:  (at && ar) ? ar : null,
       });
 
       resetForm();
@@ -672,36 +565,6 @@ const { results: allCities } = await env.DB
   }
   .diary-parchment .prose-entry p:last-child {
     margin-bottom: 0;
-  }
-
-  /* ── Attach control: parchment-styled selects ────────────────────── */
-  .diary-parchment .attach-select {
-    -webkit-appearance: none;
-    appearance: none;
-    background-color: transparent;
-    border: none;
-    border-bottom: 1px solid rgba(26, 42, 94,0.20);
-    outline: none;
-    font-family: 'Playfair Display', Georgia, serif;
-    font-style: italic;
-    font-size: 0.85rem;
-    color: rgba(26, 42, 94,0.60);
-    padding: 0.15em 1.4em 0.15em 0.1em;
-    cursor: pointer;
-    max-width: 20rem;
-    /* subtle ink-tinted caret */
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(26%2C42%2C94%2C0.35)'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 0.2em center;
-    background-size: 0.55em auto;
-  }
-  .diary-parchment .attach-select:focus {
-    border-bottom-color: rgba(26, 42, 94,0.45);
-  }
-  .diary-parchment .attach-select option {
-    background-color: #faf4e8;
-    color: #1a2a5e;
-    font-style: normal;
   }
 
   /* ── Ink-colour overrides for Tailwind text-foreground/* utilities ── */

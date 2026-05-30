@@ -13,15 +13,13 @@ type DiaryEntry = {
   location_label: string | null;
   latitude: number | null;
   longitude: number | null;
-  attach_type: string | null;
-  attach_ref: string | null;
   created_at: string;
   updated_at: string;
 };
 
 const COLUMNS =
   `id, title, body, entry_date, entry_time, location_label,
-   latitude, longitude, attach_type, attach_ref, created_at, updated_at`;
+   latitude, longitude, created_at, updated_at`;
 
 export const GET: APIRoute = async ({ request }) => {
   const auth = await requireAdmin(request);
@@ -94,8 +92,6 @@ export const POST: APIRoute = async ({ request }) => {
   const locationLabel = (body.location_label ?? "").trim() || null;
   const latitude = typeof body.latitude === "number" ? body.latitude : null;
   const longitude = typeof body.longitude === "number" ? body.longitude : null;
-  const attachType = (body.attach_type ?? "").trim() || null;
-  const attachRef = (body.attach_ref ?? "").trim() || null;
   // created_at is preserved on conflict (it is NOT in the DO UPDATE SET); only
   // used here for a first insert. updated_at drives last-write-wins.
   const createdAt = (body.created_at ?? "").trim() || now;
@@ -105,18 +101,17 @@ export const POST: APIRoute = async ({ request }) => {
     await env.DB.prepare(
       `INSERT INTO diary_entries
          (id, title, body, entry_date, entry_time, location_label,
-          latitude, longitude, attach_type, attach_ref, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          latitude, longitude, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          title=excluded.title, body=excluded.body, entry_date=excluded.entry_date,
          entry_time=excluded.entry_time, location_label=excluded.location_label,
          latitude=excluded.latitude, longitude=excluded.longitude,
-         attach_type=excluded.attach_type, attach_ref=excluded.attach_ref,
          updated_at=excluded.updated_at
        WHERE excluded.updated_at > diary_entries.updated_at`
     ).bind(
       id, title, entryBody, entryDate, entryTime, locationLabel,
-      latitude, longitude, attachType, attachRef, createdAt, updatedAt
+      latitude, longitude, createdAt, updatedAt
     ).run();
 
     // Return the row as it now stands on the server. If the guard no-op'd an

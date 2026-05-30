@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 30 May 2026, 21:11
+**Last updated**: 30 May 2026, 21:27
 
 | Item | State |
 |---|---|
@@ -49,8 +49,9 @@ boundaries.
 | Phase D Slice D5 — PWA (installable + offline shell) | ✅ Built (live install/offline testing pending) |
 | Chore — diary parchment restyle | ✅ Done |
 | Phase D Slice D6 — Attach entries to country / city / photo | ✅ Built (deploy + verify pending) |
-| **Phase D — Private travel diary** | ✅ **Complete (D1–D6)** |
-| Next immediate task | Verify D6 on live site; plan next phase |
+| **Phase D — Private travel diary** | ✅ **Complete (D1–D5 + parchment chore)** |
+| Revert: diary attach feature removed | ✅ Done (migration 0008 applied) |
+| Next immediate task | Verify diary still works; verify country page has no diary notes |
 
 ---
 
@@ -2774,6 +2775,53 @@ page* until D5; verify instead by toggling offline→online without reloading.
 - Live offline testing (DevTools → Network → Offline) not yet run — build-only
   verification so far. Wait 4–6s for hydration before judging.
 - D5: make the page open offline from cache (service worker + PWA install).
+
+---
+
+### Revert — Remove diary attach feature entirely (30 May 2026, 21:27)
+
+**Context**: Design reversal. The diary returns to being a purely standalone
+private journal. Diary entries no longer appear on country pages or anywhere
+else in the portfolio.
+
+**What was removed**
+
+- **Diary form** (`src/pages/admin/diary.astro`): "Attach to…" section (select +
+  country/city pickers), all attach JS (DOM refs, lookup maps, `getAttachRef`,
+  `formatAttachLabel`, `syncAttachPickers`, change listener, `resetForm` /
+  `populateForm` / save-handler clauses), `.attach-select` CSS block, and the
+  `import { env }` + two D1 picker queries from the frontmatter. Entry list no
+  longer shows `↳` attach labels.
+
+- **Country page** (`src/pages/countries/[slug].astro`): `DiaryNote` type, diary
+  fetch query, `formatNoteDate` / `escapeHtml` / `bodyToHtml` helpers,
+  parchment-note render block, Caveat font conditional, `<style is:global>` for
+  note cards, and `viewerIsAdmin` usage (added solely for diary notes). Page
+  is back to its pre-D6 state: dark portfolio, country title, city grids only.
+
+- **API** (`src/pages/api/admin/diary/index.ts` and `[id].ts`): `attach_type`
+  and `attach_ref` dropped from the `DiaryEntry` type, `COLUMNS` string, POST
+  INSERT columns + ON CONFLICT SET, PUT body type + UPDATE SET. GET and PUT
+  SELECT statements updated. Entries are plain: id, title, body, entry_date,
+  entry_time, location_label, created_at, updated_at (plus reserved lat/lng).
+
+- **Local layer** (`src/lib/diary-local.ts`): `attach_type` and `attach_ref`
+  removed from `DiaryEntry` and `DiaryInput` types, and from `saveEntry` (both
+  new-entry and edit paths). `diary-sync.ts` is unchanged — it sends the full
+  entry object, so dropping fields from the type is sufficient.
+
+- **Database** (`migrations/0008_drop_diary_attach.sql`): drops
+  `idx_diary_attach` index then `ALTER TABLE diary_entries DROP COLUMN
+  attach_type` and `DROP COLUMN attach_ref`. Applied to remote D1 successfully.
+  Schema confirmed via `PRAGMA table_info` — 10 columns, no attach fields.
+
+**No carries remain.** The city-render carry from D6 is also closed.
+
+**Conventions updated**
+- The diary is a standalone private journal. Country/city/photo pages do not
+  reference diary data. `attach_type` / `attach_ref` are gone as of migration 0008.
+- Phase D is now D1–D5 plus the parchment chore. D6 and its revert are recorded
+  here for history but the feature does not exist in the codebase.
 
 ---
 
