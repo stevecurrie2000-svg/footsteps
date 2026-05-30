@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 30 May 2026, 21:27
+**Last updated**: 30 May 2026, 21:32
 
 | Item | State |
 |---|---|
@@ -2775,6 +2775,17 @@ page* until D5; verify instead by toggling offline→online without reloading.
 - Live offline testing (DevTools → Network → Offline) not yet run — build-only
   verification so far. Wait 4–6s for hydration before judging.
 - D5: make the page open offline from cache (service worker + PWA install).
+
+---
+
+### Chore — Diary paper changed to soft off-white (30 May 2026, 21:32)
+
+Paper: `#faf4e8` (warm cream) → `#f8f7f4` (soft off-white, barely warm).
+Grain overlays retinted from warm amber (`rgba(160,130,90,…)`) to cooler
+neutral-warm (`rgba(140,130,115,…)` / `rgba(120,110,95,…)`) so the grain
+stays subtle on the more neutral base. Grain, shadow, and rounded edges
+unchanged. Ink (#1a2a5e navy), Caveat/Playfair fonts, and placeholder
+colour all unchanged. Visual-only.
 
 ---
 
