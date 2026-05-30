@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 30 May 2026, 16:45
+**Last updated**: 30 May 2026, 18:30
 
 | Item | State |
 |---|---|
@@ -47,8 +47,9 @@ boundaries.
 | Phase D Slice D3 — Reading polish, navigation & centred layout | ✅ Done (deploy pending verification) |
 | Phase D Slice D4 — Offline-first (write offline, sync when online) | ✅ Built (live offline-testing pending) |
 | Phase D Slice D5 — PWA (installable + offline shell) | ✅ Built (live install/offline testing pending) |
-| Chore — diary parchment restyle | ✅ Done (visual-only; deploy + verify pending) |
-| Next immediate task | Verify D4+D5 on live site; check parchment appearance on /admin/diary |
+| Chore — diary parchment restyle | ✅ Done |
+| Phase D Slice D6 — Attach entries to country / city / photo | ✅ Built (deploy + verify pending) |
+| Next immediate task | Verify D6: attach an entry to a country, visit that country page as admin, confirm parchment note renders; visit logged-out to confirm prose absent from HTML |
 
 ---
 
@@ -2772,6 +2773,96 @@ page* until D5; verify instead by toggling offline→online without reloading.
 - Live offline testing (DevTools → Network → Offline) not yet run — build-only
   verification so far. Wait 4–6s for hydration before judging.
 - D5: make the page open offline from cache (service worker + PWA install).
+
+---
+
+### Session: Phase D Slice D6 — Attach entries to country / city / photo (30 May 2026, 18:30)
+
+**Context**: Payoff slice — turns the private diary into photo-book commentary.
+Wires the `attach_type` / `attach_ref` columns (in `diary_entries` since
+migration 0007, unused until now) to both the diary form and country pages.
+No migration needed. No offline/PWA/sync changes.
+
+**Pre-flight confirmed**:
+- Country `attach_ref` key = `countries.slug` (TEXT UNIQUE; matches URL param)
+- Photo `attach_ref` key = `photos.id` (UUID)
+- City `attach_ref` key = `String(cities.id)` (integer, uniquely stable)
+- `Astro.locals.viewerIsAdmin` is set by the middleware for every request —
+  country page uses it directly, no extra `requireAdmin` needed
+
+**What was changed**
+
+`src/lib/diary-local.ts`
+- `DiaryInput` type gains `attach_type?: string | null` and
+  `attach_ref?: string | null`.
+- `saveEntry` (edit path): if caller provides the field (even as `null`),
+  honour it; if `undefined`, preserve the previous stored value. New-entry
+  path: uses input values or `null`.
+
+`src/pages/api/admin/diary/[id].ts`
+- PUT body type gains `attach_type?: string` and `attach_ref?: string`.
+- UPDATE SET clause now includes `attach_type = ?, attach_ref = ?`. Bind order
+  adjusted accordingly. The last-write-wins guard (`? > updated_at`) is
+  unchanged.
+  (POST in `index.ts` already carried both columns — no change needed there.)
+
+`src/pages/admin/diary.astro`
+- Frontmatter: adds `import { env } from "cloudflare:workers"` + three D1
+  queries: countries (slug + name), all cities (id + name + country_name),
+  24 most-recent photos (id + caption + city/country name). All used for
+  server-rendered `<option>` lists — no client round-trips.
+- Template: new "Attach to" section below the body textarea — a Playfair
+  italic `<select>` for type (none / country / city / photo), followed by a
+  conditional second `<select>` for the ref. All styled as parchment selects
+  (`appearance: none`, ink underline, custom ink SVG caret). Picker divs are
+  `hidden` by default; JS shows the right one when type changes.
+- Script: new DOM refs (`fieldAttachType`, `fieldAttachCountry/City/Photo`);
+  name-lookup Maps built from server-rendered options (so entry list can show
+  "↳ Scotland" rather than "↳ scotland"); `syncAttachPickers()` toggle helper;
+  `formatAttachLabel()` for the per-entry attach badge; `resetForm` and
+  `populateForm` updated for attach fields; save handler passes
+  `attach_type` / `attach_ref` (both null if type selected but no ref chosen);
+  `renderEntries` adds a `↳ …` label beneath the dateline for attached entries.
+- CSS: `.attach-select` added to `<style is:global>` block.
+
+`src/pages/countries/[slug].astro`
+- Frontmatter: adds `DiaryNote` type + conditional D1 query —
+  `WHERE attach_type = 'country' AND attach_ref = ?` (slug) — that only runs
+  when `Astro.locals.viewerIsAdmin` is true. Prose is NEVER fetched for
+  non-admin requests.
+- Helper functions `formatNoteDate`, `escapeHtml`, `bodyToHtml` in frontmatter
+  for server-side rendering.
+- Template: Caveat loaded in `<Fragment slot="head">` only when admin notes are
+  present. Parchment note section (`.diary-notes-rail` / `.diary-note-card`)
+  inserted between the country heading and city sections, conditional on
+  `viewerIsAdmin && diaryNotes.length > 0`.
+- Each card shows: Playfair dateline, ink hairline, optional title, Caveat
+  body prose, "Edit in diary →" link pointing to `/admin/diary?entry={id}`.
+- `<style is:global>` added for note-card layout and parchment palette.
+
+**Security posture**
+Diary prose on country pages is fetched and rendered exclusively when
+`Astro.locals.viewerIsAdmin` is true (set by middleware, which validates the
+Cloudflare Access JWT). Non-admin HTML contains no diary content — not even
+a hidden element. The diary remains private; this slice makes it visible to
+the authenticated admin in a second location only.
+
+**Carry (follow-on, not a failure)**
+- Rendering photo-attached entries on the photo lightbox/detail view: deferred
+  until the photo view has a dedicated page.
+- Rendering city-attached entries on a city view: deferred until a city page
+  exists.
+
+**Conventions introduced / locked**
+- `attach_type` ∈ `{null, 'country', 'city', 'photo'}`;
+  `attach_ref` = country slug / `String(city.id)` / photo UUID.
+- Both are stored as `null` if the user picks a type but leaves the ref blank.
+- The parchment note card (`.diary-note-card`) is the house treatment for
+  diary prose appearing outside the diary page. Reuse this component for
+  city/photo surfaces when they are built.
+- Diary prose on non-diary pages is always admin-only and server-side gated.
+
+**Phase D status**: D1 ✅ D2 ✅ D3 ✅ D4 ✅ D5 ✅ D6 ✅ — Phase D complete.
 
 ---
 

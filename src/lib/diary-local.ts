@@ -92,6 +92,8 @@ export type DiaryInput = {
   entry_date: string;
   entry_time?: string | null;
   location_label?: string | null;
+  attach_type?: string | null;
+  attach_ref?: string | null;
 };
 
 // Persist a new or edited entry. A missing/blank id means a brand-new entry:
@@ -114,8 +116,10 @@ export async function saveEntry(input: DiaryInput): Promise<DiaryEntry> {
       location_label: input.location_label ?? null,
       latitude: prev?.latitude ?? null,
       longitude: prev?.longitude ?? null,
-      attach_type: prev?.attach_type ?? null,
-      attach_ref: prev?.attach_ref ?? null,
+      // If caller provides attach_type/attach_ref (even as null), honour it;
+      // if undefined (caller didn't touch it), preserve the previous value.
+      attach_type: input.attach_type !== undefined ? (input.attach_type ?? null) : (prev?.attach_type ?? null),
+      attach_ref:  input.attach_ref  !== undefined ? (input.attach_ref  ?? null) : (prev?.attach_ref  ?? null),
       created_at: prev?.created_at ?? now,
       updated_at: now,
     };
@@ -129,8 +133,8 @@ export async function saveEntry(input: DiaryInput): Promise<DiaryEntry> {
       location_label: input.location_label ?? null,
       latitude: null,
       longitude: null,
-      attach_type: null,
-      attach_ref: null,
+      attach_type: input.attach_type ?? null,
+      attach_ref:  input.attach_ref  ?? null,
       created_at: now,
       updated_at: now,
     };

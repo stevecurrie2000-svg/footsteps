@@ -63,6 +63,8 @@ export const PUT: APIRoute = async ({ request, params }) => {
     entry_date?: string;
     entry_time?: string;
     location_label?: string;
+    attach_type?: string;
+    attach_ref?: string;
     updated_at?: string;
   };
   try {
@@ -92,6 +94,8 @@ export const PUT: APIRoute = async ({ request, params }) => {
   const entryDate = body.entry_date.trim();
   const entryTime = (body.entry_time ?? "").trim() || null;
   const locationLabel = (body.location_label ?? "").trim() || null;
+  const attachType = (body.attach_type ?? "").trim() || null;
+  const attachRef  = (body.attach_ref  ?? "").trim() || null;
   // Last-write-wins: honour a client-supplied updated_at if present (so an
   // older write can be detected and no-op'd); otherwise stamp now.
   const incomingUpdatedAt = (body.updated_at ?? "").trim() || new Date().toISOString();
@@ -112,9 +116,10 @@ export const PUT: APIRoute = async ({ request, params }) => {
     // older than the stored row changes nothing (silent no-op).
     await env.DB.prepare(
       `UPDATE diary_entries
-       SET title = ?, body = ?, entry_date = ?, entry_time = ?, location_label = ?, updated_at = ?
+       SET title = ?, body = ?, entry_date = ?, entry_time = ?, location_label = ?,
+           attach_type = ?, attach_ref = ?, updated_at = ?
        WHERE id = ? AND ? > updated_at`
-    ).bind(title, entryBody, entryDate, entryTime, locationLabel, incomingUpdatedAt, id, incomingUpdatedAt).run();
+    ).bind(title, entryBody, entryDate, entryTime, locationLabel, attachType, attachRef, incomingUpdatedAt, id, incomingUpdatedAt).run();
 
     // Return the row as it now stands (the newer version, whichever won).
     const updated = await env.DB.prepare(

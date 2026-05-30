@@ -62,6 +62,55 @@ const ogImage = country.thumbnail_r2_key_medium
 
 // First 8 photos in DOM order load eagerly
 const eagerPhotoIds = new Set(lightboxPhotos.slice(0, 8).map(p => p.id));
+
+// ── Admin-only diary notes ─────────────────────────────────────────
+// Prose is NEVER emitted to non-admin HTML — gated here, server-side.
+type DiaryNote = {
+  id: string;
+  title: string | null;
+  body: string;
+  entry_date: string;
+  entry_time: string | null;
+  location_label: string | null;
+};
+
+let diaryNotes: DiaryNote[] = [];
+if (Astro.locals.viewerIsAdmin) {
+  const { results } = await env.DB
+    .prepare(
+      `SELECT id, title, body, entry_date, entry_time, location_label
+       FROM diary_entries
+       WHERE attach_type = 'country' AND attach_ref = ?
+       ORDER BY entry_date DESC, created_at DESC`
+    )
+    .bind(country.slug)
+    .all<DiaryNote>();
+  diaryNotes = results ?? [];
+}
+
+function formatNoteDate(note: DiaryNote): string {
+  const parts: string[] = [];
+  if (note.entry_date) {
+    const [y, m, d] = note.entry_date.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    const weekday = dt.toLocaleString("en-AU", { weekday: "long" });
+    parts.push(`${weekday} ${dt.getDate()} ${dt.toLocaleString("en-AU", { month: "long" })}`);
+  }
+  if (note.entry_time) parts.push(note.entry_time);
+  if (note.location_label) parts.push(note.location_label);
+  return parts.join(" · ");
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function bodyToHtml(raw: string): string {
+  return raw
+    .split(/\n{2,}/)
+    .map(para => `<p>${escapeHtml(para.trim()).replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
 ---
 
 <BaseLayout
@@ -71,6 +120,16 @@ const eagerPhotoIds = new Set(lightboxPhotos.slice(0, 8).map(p => p.id));
   ogImage={ogImage}
   ogType="article"
 >
+  {/* Load Caveat only when admin diary notes are present on this page */}
+  {Astro.locals.viewerIsAdmin && diaryNotes.length > 0 && (
+    <Fragment slot="head">
+      <link
+        href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600&display=swap"
+        rel="stylesheet"
+      />
+    </Fragment>
+  )}
+
   <!-- Country heading -->
   <div class="mx-auto max-w-7xl px-6 pb-12 pt-16">
     <a
@@ -86,6 +145,25 @@ const eagerPhotoIds = new Set(lightboxPhotos.slice(0, 8).map(p => p.id));
       {country.name}
     </h1>
   </div>
+
+  <!-- Admin-only diary notes: parchment cards pinned above the city grids -->
+  {Astro.locals.viewerIsAdmin && diaryNotes.length > 0 && (
+    <div class="mx-auto max-w-7xl px-6 pb-12">
+      <div class="diary-notes-rail">
+        {diaryNotes.map(note => (
+          <article class="diary-note-card">
+            <p class="diary-note-dateline">{formatNoteDate(note)}</p>
+            <div class="diary-note-rule"></div>
+            {note.title && <h3 class="diary-note-title">{note.title}</h3>}
+            <div class="diary-note-body" set:html={bodyToHtml(note.body)} />
+            <a href={`/admin/diary?entry=${note.id}`} class="diary-note-link">
+              Edit in diary →
+            </a>
+          </article>
+        ))}
+      </div>
+    </div>
+  )}
 
   <!-- City sections -->
   {
@@ -126,3 +204,99 @@ const eagerPhotoIds = new Set(lightboxPhotos.slice(0, 8).map(p => p.id));
 
   <Lightbox photos={lightboxPhotos} mode="public" />
 </BaseLayout>
+
+<style is:global>
+  /* ── Diary note rail: flex row of parchment cards ────────────────── */
+  .diary-notes-rail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+  }
+
+  /* ── Individual parchment note card ──────────────────────────────── */
+  .diary-note-card {
+    flex: 1 1 20rem;
+    max-width: 38rem;
+    padding: 1.75rem 2rem;
+    border-radius: 3px;
+    background-color: hsl(40, 46%, 90%);
+    background-image:
+      radial-gradient(
+        ellipse at center,
+        transparent 62%,
+        rgba(160, 130, 90, 0.22) 100%
+      ),
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 3px,
+        rgba(140, 110, 70, 0.048) 3px,
+        rgba(140, 110, 70, 0.048) 4px
+      );
+    box-shadow:
+      0 1px 4px rgba(0, 0, 0, 0.18),
+      0 6px 28px rgba(0, 0, 0, 0.38),
+      0 0 0 1px rgba(0, 0, 0, 0.06);
+    color: #2a2a3a;
+  }
+
+  .diary-note-dateline {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 0.8rem;
+    font-style: italic;
+    color: rgba(42, 42, 58, 0.50);
+    margin-bottom: 0.5rem;
+  }
+
+  .diary-note-rule {
+    height: 1px;
+    background-color: rgba(42, 42, 58, 0.12);
+    margin-bottom: 0.75rem;
+  }
+
+  .diary-note-title {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 1.05rem;
+    font-weight: 400;
+    color: rgba(42, 42, 58, 0.90);
+    margin-bottom: 0.5rem;
+  }
+
+  .diary-note-body {
+    font-family: 'Caveat', cursive;
+    font-size: 1.2rem;
+    line-height: 1.6;
+    color: rgba(42, 42, 58, 0.85);
+  }
+
+  .diary-note-body p {
+    margin-bottom: 0.75rem;
+  }
+
+  .diary-note-body p:last-child {
+    margin-bottom: 0;
+  }
+
+  .diary-note-link {
+    display: inline-block;
+    margin-top: 0.875rem;
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 0.72rem;
+    font-style: italic;
+    color: rgba(42, 42, 58, 0.35);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .diary-note-link:hover {
+    color: rgba(42, 42, 58, 0.65);
+  }
+
+  @media (max-width: 640px) {
+    .diary-note-card {
+      flex: 1 1 100%;
+      max-width: 100%;
+      padding: 1.5rem 1.25rem;
+    }
+  }
+</style>
