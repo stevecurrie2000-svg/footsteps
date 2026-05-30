@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 30 May 2026, 10:50
+**Last updated**: 30 May 2026, 16:45
 
 | Item | State |
 |---|---|
@@ -47,7 +47,8 @@ boundaries.
 | Phase D Slice D3 — Reading polish, navigation & centred layout | ✅ Done (deploy pending verification) |
 | Phase D Slice D4 — Offline-first (write offline, sync when online) | ✅ Built (live offline-testing pending) |
 | Phase D Slice D5 — PWA (installable + offline shell) | ✅ Built (live install/offline testing pending) |
-| Next immediate task | Verify D4+D5 on live site: install PWA, reload offline (page opens from cache), write offline, re-sync online |
+| Chore — diary parchment restyle | ✅ Done (visual-only; deploy + verify pending) |
+| Next immediate task | Verify D4+D5 on live site; check parchment appearance on /admin/diary |
 
 ---
 
@@ -2771,6 +2772,77 @@ page* until D5; verify instead by toggling offline→online without reloading.
 - Live offline testing (DevTools → Network → Offline) not yet run — build-only
   verification so far. Wait 4–6s for hydration before judging.
 - D5: make the page open offline from cache (service worker + PWA install).
+
+---
+
+### Session: Chore — Diary parchment restyle (30 May 2026, 16:45)
+
+**Context**: Visual-only restyle of the `/admin/diary` page. The diary is the
+one personal, private part of the site and should look distinct from the slick
+dark portfolio. No data model, API, IndexedDB, sync engine, or PWA changes.
+
+**What was changed** (`src/pages/admin/diary.astro` only)
+
+- **Wrapper structure**: Content is now wrapped in `.diary-page` (dark padding
+  surrounds the sheet) and `.diary-parchment` (the parchment sheet itself).
+  The original `mx-auto max-w-[42rem]` column is replaced by these two divs;
+  the 42rem max-width is now enforced by the sheet's CSS.
+
+- **Caveat font**: Loaded in the `<Fragment slot="head">` (diary route only, same
+  mechanism as the PWA manifest link) via Google Fonts:
+  `family=Caveat:wght@400;500;600&display=swap`. Does not load on any other page.
+
+- **Parchment sheet (`<style is:global>`)**: `.diary-parchment` gets:
+  - Base colour: `hsl(40, 46%, 90%)` — warm cream, not white.
+  - Paper grain: three layered `background-image` gradients (radial edge
+    vignette + ultra-faint horizontal fibres + faint diagonal cross-grain).
+    No image assets. Grain is intentionally subtle — readability first.
+  - Box shadow: two-layer drop shadow (`0 8px 40px rgba(0,0,0,.40)` main lift
+    + `0 1px 4px` ambient) and a hairline ring `0 0 0 1px rgba(0,0,0,.06)`.
+  - Border-radius: 3px.
+  - Ink colour: `#2a2a3a` (dark blue-black, not pure black).
+  - Default font: `'Caveat', cursive` at 1.3rem / 1.6 line-height.
+
+- **Font scoping**: Within `.diary-parchment`, `.font-serif` maps to
+  `'Playfair Display'` explicitly (covering month headings, dateline, sync
+  status, empty-state heading — anything with the `font-serif` Tailwind class).
+  Dateline form inputs get Playfair via `#form-dateline input`. Title field
+  (`#field-title`) gets Playfair. Body textarea and `.prose-entry` get Caveat
+  with `font-size: 1.3rem`.
+
+- **Colour overrides**: All `text-foreground/*` and `bg-white/*` Tailwind
+  utilities are overridden within `.diary-parchment` to use ink-at-opacity
+  equivalents (`rgba(42,42,58,X)`) rather than the site's white-on-dark values.
+  This covers both the static template and dynamically-injected elements (month
+  headings, articles) — hence `<style is:global>` rather than scoped styles.
+
+- **Save button**: `#save-btn` overridden to `background: #2a2a3a` / cream text,
+  Playfair. Hover: `rgba(42,42,58,0.84)`.
+
+- **Textarea lined paper**: The existing repeating-gradient for lined paper is
+  updated from white-tinted lines to ink-tinted (`rgba(42,42,58,0.08)`),
+  matching the parchment palette.
+
+- **Month headings** (`p.tracking-wide`): Playfair, 0.67rem, uppercase, 0.10em
+  letter-spacing, ink at 35% — reads as a quiet printed caption.
+
+- **Mobile**: `@media (max-width:640px)` — `.diary-page` padding collapses to
+  `0.75rem 0 3rem`; `.diary-parchment` border-radius becomes 0 (full-bleed sheet).
+
+**Why `<style is:global>`**: Astro scoped styles append a `data-astro-cid-*`
+attribute to both the selector and the matched element. Elements injected by
+JavaScript (month headings, article cards) don't get that attribute, so scoped
+selectors targeting them don't match. All rules are prefixed with
+`.diary-parchment` to prevent any leakage to the wider site.
+
+**Conventions introduced**
+
+- The diary has its own visual language (cream parchment + Caveat handwriting +
+  `#2a2a3a` ink), deliberately distinct from the site's dark theme. Scoped to
+  `.diary-parchment` only. All future diary-specific styling goes inside that
+  scope.
+- Caveat is loaded only in the diary's `<Fragment slot="head">` — it never
+  loads on portfolio or private pages.
 
 ---
 

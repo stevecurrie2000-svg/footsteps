@@ -10,98 +10,107 @@ if (auth instanceof Response) return auth;
 
 <BaseLayout title="Diary — Admin — Footsteps" isAdmin={true}>
   <!-- PWA: manifest + theme-color, diary route only (not site-wide). -->
+  <!-- Caveat: handwriting font, diary page only — does not leak to site. -->
   <Fragment slot="head">
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#0a0a0a" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
   </Fragment>
 
-  <div class="mx-auto max-w-[42rem] px-6 py-12">
+  <!-- Outer container: dark surround so the parchment sheet floats -->
+  <div class="diary-page">
+    <!-- Parchment sheet: aged cream, paper grain, soft drop-shadow -->
+    <div class="diary-parchment">
 
-    <!-- Write / edit form -->
-    <section id="form-section" class="mb-16">
-      <div id="form-dateline" class="mb-4">
-        <div class="flex flex-wrap gap-x-6 gap-y-2 font-serif text-sm text-foreground/50 italic">
-          <input
-            id="field-date"
-            type="date"
-            class="bg-transparent border-none outline-none text-foreground/70 font-serif italic text-sm w-36 cursor-pointer"
-            placeholder="Date"
-          />
-          <input
-            id="field-time"
-            type="text"
-            maxlength="40"
-            class="bg-transparent border-none outline-none text-foreground/50 font-serif italic text-sm w-28 placeholder:text-foreground/30"
-            placeholder="Time (optional)"
-          />
-          <input
-            id="field-location"
-            type="text"
-            maxlength="120"
-            class="bg-transparent border-none outline-none text-foreground/50 font-serif italic text-sm flex-1 min-w-[8rem] placeholder:text-foreground/30"
-            placeholder="Place (optional)"
-          />
-        </div>
-        <div class="mt-3 h-px bg-white/10"></div>
-      </div>
-
-      <input
-        id="field-title"
-        type="text"
-        maxlength="200"
-        class="w-full mb-3 bg-transparent border-none outline-none text-foreground/80 font-serif text-lg placeholder:text-foreground/25"
-        placeholder="Title (optional)"
-      />
-
-      <textarea
-        id="field-body"
-        rows="10"
-        class="w-full bg-transparent border-none outline-none resize-none text-foreground/85 text-base leading-[1.75] placeholder:text-foreground/25"
-        placeholder="Begin writing…"
-      ></textarea>
-
-      <div class="mt-6 flex items-center gap-4">
-        <button
-          id="save-btn"
-          class="rounded bg-white text-background px-5 py-2 text-sm font-medium hover:bg-white/90 transition-colors disabled:opacity-40"
-        >Save entry</button>
-        <button
-          id="cancel-btn"
-          class="hidden text-sm text-foreground/40 hover:text-foreground/70 transition-colors"
-        >Cancel</button>
-        <p id="form-error" class="hidden text-sm text-red-400"></p>
-      </div>
-
-      <!-- Sync status — quiet, paper-diary voice -->
-      <p id="sync-status" class="mt-4 font-serif text-xs italic text-foreground/30"></p>
-    </section>
-
-    <!-- Divider -->
-    <div class="mb-14 h-px bg-white/8"></div>
-
-    <!-- Entry list -->
-    <section id="list-section">
-      <div id="list-loading" class="space-y-10">
-        {[1, 2].map(() => (
-          <div class="animate-pulse space-y-3">
-            <div class="h-3 w-48 rounded bg-white/8"></div>
-            <div class="h-px bg-white/8"></div>
-            <div class="space-y-2">
-              <div class="h-3 w-full rounded bg-white/5"></div>
-              <div class="h-3 w-5/6 rounded bg-white/5"></div>
-              <div class="h-3 w-3/4 rounded bg-white/5"></div>
-            </div>
+      <!-- Write / edit form -->
+      <section id="form-section" class="mb-16">
+        <div id="form-dateline" class="mb-4">
+          <div class="flex flex-wrap gap-x-6 gap-y-2 font-serif text-sm text-foreground/50 italic">
+            <input
+              id="field-date"
+              type="date"
+              class="bg-transparent border-none outline-none text-foreground/70 font-serif italic text-sm w-36 cursor-pointer"
+              placeholder="Date"
+            />
+            <input
+              id="field-time"
+              type="text"
+              maxlength="40"
+              class="bg-transparent border-none outline-none text-foreground/50 font-serif italic text-sm w-28 placeholder:text-foreground/30"
+              placeholder="Time (optional)"
+            />
+            <input
+              id="field-location"
+              type="text"
+              maxlength="120"
+              class="bg-transparent border-none outline-none text-foreground/50 font-serif italic text-sm flex-1 min-w-[8rem] placeholder:text-foreground/30"
+              placeholder="Place (optional)"
+            />
           </div>
-        ))}
-      </div>
-      <p id="list-error" class="hidden text-sm text-red-400"></p>
-      <div id="entries-container" class="hidden"></div>
-      <div id="empty-state" class="hidden py-16 text-center">
-        <p class="font-serif text-xl italic text-foreground/20">A fresh page…</p>
-        <p class="mt-2 text-xs text-foreground/15">Write the first entry above.</p>
-      </div>
-    </section>
+          <div class="mt-3 h-px bg-white/10"></div>
+        </div>
 
+        <input
+          id="field-title"
+          type="text"
+          maxlength="200"
+          class="w-full mb-3 bg-transparent border-none outline-none text-foreground/80 font-serif text-lg placeholder:text-foreground/25"
+          placeholder="Title (optional)"
+        />
+
+        <textarea
+          id="field-body"
+          rows="10"
+          class="w-full bg-transparent border-none outline-none resize-none text-foreground/85 text-base leading-[1.75] placeholder:text-foreground/25"
+          placeholder="Begin writing…"
+        ></textarea>
+
+        <div class="mt-6 flex items-center gap-4">
+          <button
+            id="save-btn"
+            class="rounded bg-white text-background px-5 py-2 text-sm font-medium hover:bg-white/90 transition-colors disabled:opacity-40"
+          >Save entry</button>
+          <button
+            id="cancel-btn"
+            class="hidden text-sm text-foreground/40 hover:text-foreground/70 transition-colors"
+          >Cancel</button>
+          <p id="form-error" class="hidden text-sm text-red-400"></p>
+        </div>
+
+        <!-- Sync status — quiet, paper-diary voice -->
+        <p id="sync-status" class="mt-4 font-serif text-xs italic text-foreground/30"></p>
+      </section>
+
+      <!-- Divider -->
+      <div class="mb-14 h-px bg-white/8"></div>
+
+      <!-- Entry list -->
+      <section id="list-section">
+        <div id="list-loading" class="space-y-10">
+          {[1, 2].map(() => (
+            <div class="animate-pulse space-y-3">
+              <div class="h-3 w-48 rounded bg-white/8"></div>
+              <div class="h-px bg-white/8"></div>
+              <div class="space-y-2">
+                <div class="h-3 w-full rounded bg-white/5"></div>
+                <div class="h-3 w-5/6 rounded bg-white/5"></div>
+                <div class="h-3 w-3/4 rounded bg-white/5"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p id="list-error" class="hidden text-sm text-red-400"></p>
+        <div id="entries-container" class="hidden"></div>
+        <div id="empty-state" class="hidden py-16 text-center">
+          <p class="font-serif text-xl italic text-foreground/20">A fresh page…</p>
+          <p class="mt-2 text-xs text-foreground/15">Write the first entry above.</p>
+        </div>
+      </section>
+
+    </div>
   </div>
 </BaseLayout>
 
@@ -451,25 +460,191 @@ if (auth instanceof Response) return auth;
   }
 </script>
 
-<style>
-  /* Paper-diary prose paragraphs */
-  .prose-entry p {
-    margin-bottom: 0.875rem;
-  }
-  .prose-entry p:last-child {
-    margin-bottom: 0;
+<!--
+  All styles are global (is:global) so they apply to dynamically-injected
+  elements (month headings, articles) that Astro cannot add its cid attribute to.
+  Every rule is scoped under .diary-parchment so nothing leaks to the wider site.
+-->
+<style is:global>
+  /* ── Outer page: dark pad so the parchment sheet floats ─────────── */
+  .diary-page {
+    padding: 2.5rem 1.25rem 5rem;
+    min-height: 60vh;
   }
 
-  /* Hairline rule under body textarea as a subtle lined-paper nod */
-  #field-body {
+  /* ── Parchment sheet ────────────────────────────────────────────── */
+  .diary-parchment {
+    max-width: 42rem;
+    margin: 0 auto;
+    padding: 3.5rem 3rem;
+    border-radius: 3px;
+
+    /* Warm cream base */
+    background-color: hsl(40, 46%, 90%);
+    /*
+      Three layered grain effects:
+      1. Radial vignette — gently darkens edges, mimics held paper
+      2. Horizontal fibre lines — ultra-faint, suggest paper grain
+      3. Diagonal cross-grain — barely-there second axis of texture
+    */
+    background-image:
+      radial-gradient(
+        ellipse at center,
+        transparent 62%,
+        rgba(160, 130, 90, 0.22) 100%
+      ),
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 3px,
+        rgba(140, 110, 70, 0.048) 3px,
+        rgba(140, 110, 70, 0.048) 4px
+      ),
+      repeating-linear-gradient(
+        -26deg,
+        transparent 0px,
+        transparent 13px,
+        rgba(180, 150, 100, 0.03) 13px,
+        rgba(180, 150, 100, 0.03) 14px
+      );
+
+    box-shadow:
+      0 1px 4px rgba(0, 0, 0, 0.18),
+      0 8px 40px rgba(0, 0, 0, 0.40),
+      0 0 0 1px rgba(0, 0, 0, 0.06);
+
+    /* Ink colour: dark blue-black, not pure black */
+    color: #2a2a3a;
+    /* Caveat handwriting as the default — overridden to Playfair for datelines */
+    font-family: 'Caveat', cursive;
+    font-size: 1.3rem;
+    line-height: 1.6;
+  }
+
+  /* ── font-serif → Playfair within the parchment ─────────────────── */
+  .diary-parchment .font-serif {
+    font-family: 'Playfair Display', Georgia, serif;
+  }
+
+  /* ── Dateline inputs: Playfair, not handwriting ──────────────────── */
+  .diary-parchment #form-dateline input {
+    font-family: 'Playfair Display', Georgia, serif;
+  }
+
+  /* ── Title field: Playfair ───────────────────────────────────────── */
+  .diary-parchment #field-title {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 1.125rem;
+  }
+
+  /* ── Body textarea: Caveat handwriting with ink-tinted ruled lines ── */
+  .diary-parchment #field-body {
+    font-family: 'Caveat', cursive;
+    font-size: 1.3rem;
+    line-height: 1.6;
     background-image: repeating-linear-gradient(
       to bottom,
       transparent,
-      transparent calc(1.75em - 1px),
-      rgba(255,255,255,0.04) calc(1.75em - 1px),
-      rgba(255,255,255,0.04) 1.75em
+      transparent calc(1.6em - 1px),
+      rgba(42, 42, 58, 0.08) calc(1.6em - 1px),
+      rgba(42, 42, 58, 0.08) 1.6em
     );
     background-attachment: local;
     padding-top: 0.1em;
+  }
+
+  /* ── Entry prose body: Caveat ────────────────────────────────────── */
+  .diary-parchment .prose-entry {
+    font-family: 'Caveat', cursive;
+    font-size: 1.3rem;
+    line-height: 1.65;
+  }
+  .diary-parchment .prose-entry p {
+    margin-bottom: 0.875rem;
+  }
+  .diary-parchment .prose-entry p:last-child {
+    margin-bottom: 0;
+  }
+
+  /* ── Ink-colour overrides for Tailwind text-foreground/* utilities ── */
+  .diary-parchment .text-foreground\/15 { color: rgba(42,42,58,0.15); }
+  .diary-parchment .text-foreground\/20 { color: rgba(42,42,58,0.20); }
+  .diary-parchment .text-foreground\/25 { color: rgba(42,42,58,0.25); }
+  .diary-parchment .text-foreground\/30 { color: rgba(42,42,58,0.30); }
+  .diary-parchment .text-foreground\/40 { color: rgba(42,42,58,0.40); }
+  .diary-parchment .text-foreground\/45 { color: rgba(42,42,58,0.45); }
+  .diary-parchment .text-foreground\/50 { color: rgba(42,42,58,0.50); }
+  .diary-parchment .text-foreground\/60 { color: rgba(42,42,58,0.60); }
+  .diary-parchment .text-foreground\/70 { color: rgba(42,42,58,0.70); }
+  .diary-parchment .text-foreground\/80 { color: rgba(42,42,58,0.80); }
+  .diary-parchment .text-foreground\/85 { color: rgba(42,42,58,0.85); }
+  .diary-parchment .text-foreground\/90 { color: rgba(42,42,58,0.90); }
+  .diary-parchment .hover\:text-foreground\/60:hover { color: rgba(42,42,58,0.60); }
+  .diary-parchment .hover\:text-foreground\/70:hover { color: rgba(42,42,58,0.70); }
+
+  /* ── Ink-tint overrides for white/* background utilities ─────────── */
+  .diary-parchment .bg-white\/10,
+  .diary-parchment .bg-white\/8  { background-color: rgba(42,42,58,0.10); }
+  .diary-parchment .bg-white\/5  { background-color: rgba(42,42,58,0.06); }
+
+  /* ── Save button: dark ink on cream ─────────────────────────────── */
+  .diary-parchment #save-btn {
+    background-color: #2a2a3a;
+    color: hsl(40, 46%, 90%);
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 0.8rem;
+    letter-spacing: 0.03em;
+  }
+  .diary-parchment #save-btn:hover:not(:disabled) {
+    background-color: rgba(42,42,58,0.84);
+  }
+
+  /* ── Placeholders: faint ink ─────────────────────────────────────── */
+  .diary-parchment ::placeholder { color: rgba(42,42,58,0.28); }
+
+  /* ── Month headings (p.tracking-wide, injected dynamically by JS) ── */
+  .diary-parchment p.tracking-wide {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 0.67rem;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: rgba(42,42,58,0.35);
+  }
+
+  /* ── Entry article: divider hairline ────────────────────────────── */
+  .diary-parchment article .h-px {
+    background-color: rgba(42,42,58,0.12);
+  }
+
+  /* ── Entry title h2 (injected dynamically by JS) ─────────────────── */
+  .diary-parchment article h2 {
+    font-family: 'Playfair Display', Georgia, serif;
+    color: rgba(42,42,58,0.90);
+  }
+
+  /* ── Edit / delete action buttons ───────────────────────────────── */
+  .diary-parchment .edit-btn,
+  .diary-parchment .delete-btn {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 0.68rem;
+    font-style: italic;
+  }
+
+  /* ── Inline delete in edit mode (injected dynamically by JS) ──────── */
+  .diary-parchment #inline-delete {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 0.8rem;
+    font-style: italic;
+  }
+
+  /* ── Mobile: tighter padding, full-bleed sheet ───────────────────── */
+  @media (max-width: 640px) {
+    .diary-page {
+      padding: 0.75rem 0 3rem;
+    }
+    .diary-parchment {
+      padding: 2.5rem 1.5rem;
+      border-radius: 0;
+    }
   }
 </style>
