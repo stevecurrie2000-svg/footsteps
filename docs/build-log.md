@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 30 May 2026, 21:32
+**Last updated**: 30 May 2026, 21:35
 
 | Item | State |
 |---|---|
@@ -2775,6 +2775,16 @@ page* until D5; verify instead by toggling offline→online without reloading.
 - Live offline testing (DevTools → Network → Offline) not yet run — build-only
   verification so far. Wait 4–6s for hydration before judging.
 - D5: make the page open offline from cache (service worker + PWA install).
+
+---
+
+### Chore — R2 storage shown as % of 10 GB free tier on admin dashboard (30 May 2026, 21:35)
+
+Storage tile on `/admin` now shows e.g. `2.34 GB` with a sub-line `of 10 GB · 23.4%`.
+Allowance is 10 × 1024³ bytes (binary, matching `formatBytes`'s 1024-based units).
+Colour: green (`text-emerald-400`) < 70%, amber 70–90%, red > 90%.
+Storage-only by design — operations (Class A/B) and D1 excluded; egress is free
+on R2 and operations are far from the limit at current upload volume.
 
 ---
 

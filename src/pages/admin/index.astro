@@ -29,6 +29,8 @@ const { email } = auth;
         ))}
       </div>
       <p id="stats-error" class="hidden mt-3 text-sm text-red-400"></p>
+    <!-- Safelist: injected dynamically by storage-warning JS -->
+    <span hidden class="text-emerald-400 text-amber-400"></span>
     </section>
 
     <!-- Quick links -->
@@ -129,7 +131,19 @@ const { email } = auth;
       setStatValue("countries", String(data.countryCount));
       setStatValue("last-upload", formatLastUpload(data.lastUploadIso));
       setStatValue("allowed-users", data.allowlistCount != null ? String(data.allowlistCount) : "—");
-      setStatValue("storage", formatBytes(data.r2BytesUsed));
+
+      // Storage: raw figure + percentage of the R2 10 GiB free-tier allowance.
+      // formatBytes is 1024-based, so the cap is 10 × 1024³ bytes.
+      const R2_FREE_TIER_BYTES = 10 * 1024 * 1024 * 1024;
+      const pct = (data.r2BytesUsed / R2_FREE_TIER_BYTES) * 100;
+      const pctStr = pct.toFixed(1);
+      const pctClass = pct >= 90 ? "text-red-400" : pct >= 70 ? "text-amber-400" : "text-emerald-400";
+      const storageEl = document.getElementById("stat-value-storage")!;
+      storageEl.classList.remove("animate-pulse", "bg-white/5", "h-7", "w-16");
+      storageEl.innerHTML =
+        `${formatBytes(data.r2BytesUsed)}` +
+        `<span class="block text-xs font-normal text-foreground/40 mt-0.5">` +
+        `of 10 GB &middot; <span class="${pctClass}">${pctStr}%</span></span>`;
     } catch (err: any) {
       const errEl = document.getElementById("stats-error")!;
       errEl.textContent = `Could not load stats: ${err.message}`;
