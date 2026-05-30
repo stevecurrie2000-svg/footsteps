@@ -40,6 +40,7 @@ const showAdminLink = Astro.locals.viewerIsAdmin && !isAdmin;
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap"
       rel="stylesheet"
     />
+    <slot name="head" />
   </head>
   <body class="min-h-screen flex flex-col">
     <header class:list={["sticky top-0 z-50 border-b border-white/10 bg-[#0a0a0a]/90 backdrop-blur-sm", { "bg-amber-950/25": isPrivate }]}>

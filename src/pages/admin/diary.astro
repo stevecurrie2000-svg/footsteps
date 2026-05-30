@@ -9,6 +9,12 @@ if (auth instanceof Response) return auth;
 ---
 
 <BaseLayout title="Diary — Admin — Footsteps" isAdmin={true}>
+  <!-- PWA: manifest + theme-color, diary route only (not site-wide). -->
+  <Fragment slot="head">
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0a0a0a" />
+  </Fragment>
+
   <div class="mx-auto max-w-[42rem] px-6 py-12">
 
     <!-- Write / edit form -->
@@ -435,6 +441,14 @@ if (auth instanceof Response) return auth;
   loadEntries();
   initSync();   // initial push+pull if online; wires the 'online' event
   refreshStatus();
+
+  // PWA: register the service worker (diary route only) so the app shell opens
+  // offline. Scoped to /admin/diary — never site-wide. See public/sw.js.
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker
+      .register("/sw.js", { scope: "/admin/diary" })
+      .catch((err) => console.error("[diary] service worker registration failed", err));
+  }
 </script>
 
 <style>

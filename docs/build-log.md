@@ -8,7 +8,7 @@ boundaries.
 
 ## Current snapshot
 
-**Last updated**: 30 May 2026, 10:34
+**Last updated**: 30 May 2026, 10:50
 
 | Item | State |
 |---|---|
@@ -46,7 +46,8 @@ boundaries.
 | Phase D Slice D2 — Dateline refinement | ✅ Done |
 | Phase D Slice D3 — Reading polish, navigation & centred layout | ✅ Done (deploy pending verification) |
 | Phase D Slice D4 — Offline-first (write offline, sync when online) | ✅ Built (live offline-testing pending) |
-| Next immediate task | Verify D4 offline behaviour (DevTools → Network → Offline) on live site |
+| Phase D Slice D5 — PWA (installable + offline shell) | ✅ Built (live install/offline testing pending) |
+| Next immediate task | Verify D4+D5 on live site: install PWA, reload offline (page opens from cache), write offline, re-sync online |
 
 ---
 
@@ -2597,6 +2598,84 @@ until 100+ photos exist across 5+ countries.
 - `footsteps-upload-script` API token — still pending revocation
 - `docs/footsteps_architecture_post_phase_3.svg` — still untracked
 - Node 20 deprecation on action wrappers — bump `@v5` when stable
+
+---
+
+### Session: Phase D Slice D5 — PWA (installable + offline shell) (30 May 2026, 10:50)
+
+**Context**: D4 made the diary DATA survive offline; D5 makes the diary PAGE
+open offline and installable to phone + Windows home screens. This **closes the
+D4 reload-offline seam** — reloading `/admin/diary` offline now loads the shell
+from cache (D4 verification step 3) and renders entries from IndexedDB. Built on
+the working D4 baseline; no D1–D4 logic changed. Landed in **one attempt**;
+`astro build` clean, all four static assets confirmed in `dist/client/`.
+
+**Files**
+
+| File | Change |
+|---|---|
+| `public/manifest.webmanifest` | **New.** PWA manifest, scope + start_url `/admin/diary`, standalone, `#0a0a0a`, icons 192/512. |
+| `public/sw.js` | **New.** Service worker — cache-first shell, network-only `/api/*`, versioned cache + activate cleanup. |
+| `src/layouts/BaseLayout.astro` | Added a named `<slot name="head" />` before `</head>` so a page can inject head tags without widening anything site-wide. |
+| `src/pages/admin/diary.astro` | Injects `<link rel="manifest">` + `<meta name="theme-color">` via the head slot; registers `sw.js` scoped to `/admin/diary` from the page's init script. |
+| `docs/build-log.md` | This entry. |
+
+**Cache name / version**: `footsteps-diary-v1`. **Bump this when the shell
+changes** — `activate()` deletes every cache whose name ≠ current version, so a
+version bump is how a new shell ships (cache-first would otherwise serve the old
+shell indefinitely).
+
+**Network strategy** (in `sw.js` `fetch` handler):
+- `/api/*` → **NETWORK-ONLY**: never cached, never served from cache. Entry data
+  is never stale and the Cloudflare Access gate always applies when online.
+- **Navigations** → cache-first against the precached `/admin/diary` shell, with
+  `{ ignoreSearch: true }` so `?entry=…` permalinks still match the shell, then
+  network fallback.
+- **Assets** (hashed JS/CSS, icons) → cache-first, populate on a clean
+  same-origin (`type === "basic"`) 200. Hashed bundle names are **not**
+  enumerated at install — they're cached at runtime on the first authenticated
+  online load. Install precaches only stable URLs: `/admin/diary`,
+  `/manifest.webmanifest`, `/icon-192.png`, `/icon-512.png`.
+- Only same-origin GETs are intercepted; POST/PUT/DELETE (the D4 sync writes)
+  and cross-origin (fonts) pass straight to the network.
+
+**The Cloudflare Access security posture** (security-critical — stated per
+spec): offline, the device can't reach Access to prove identity, so the SW
+replays the cached **shell** (HTML/JS/CSS) without a fresh Access check. That is
+the **only** thing ever served unauthenticated, and it's non-sensitive — the
+user had to be authenticated online to install/cache it in the first place (the
+install-time fetch of `/admin/diary` carries the same-origin `CF_Authorization`
+cookie, so Access had already allowed it). **Entries never leave the device
+unauthenticated**; they live in IndexedDB and only sync through the Access gate
+when online. `/api/*` being network-only guarantees no entry data is ever served
+from cache.
+
+**PWA scope is DIARY-ONLY**: manifest `scope`/`start_url` are `/admin/diary`,
+the SW registers with `{ scope: "/admin/diary" }`, and the manifest link + SW
+registration live only on the diary page (the new BaseLayout head slot stays
+empty for every other page). No public or other-admin page is cached. The SW
+controls all fetches made by the diary client (including `/_astro/*` assets
+outside the scope path), which is why asset caching works despite the narrow
+scope.
+
+**Icons vs favicon**: PWA icons are `public/icon-192.png` / `icon-512.png`
+(Playfair "F" on `#0a0a0a`), used **only** by the manifest. The **site favicon
+stays the Astro default** per the 28 May decision — untouched.
+
+**Conventions locked in** (reuse in later slices)
+- PWA scope is diary-only (`/admin/diary`); don't widen without a deliberate
+  decision.
+- Never cache `/api/*`; cache-first only for the static shell.
+- Versioned SW cache names with activate-time cleanup; bump on shell change.
+- BaseLayout exposes a named `head` slot for per-page head tags.
+
+**Carries — still open**
+- Live install + offline testing not yet run (build-only so far): confirm SW
+  "activated", manifest parses, install to Windows + phone, reload-offline opens
+  from cache, offline write still syncs online, and Cache Storage shows
+  `/api/admin/diary` is NOT cached. Allow a moment after first load for the SW
+  to install/cache.
+- D4's own live offline verification also still pending (carried from D4).
 
 ---
 
